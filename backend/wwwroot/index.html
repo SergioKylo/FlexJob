@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FlexJob — Trabalho Flexível em Portugal</title>
+    <meta name="description" content="FlexJob é um mercado de trabalho temporário bidirecional em Portugal. Encontra ajuda imediata ou declara a tua disponibilidade num mapa interativo.">
+    
+    <!-- CSS imports -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+    <!-- Toast Notifications Wrapper -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- ==============================================
+         1. LANDING VIEW (Public page)
+         ============================================== -->
+    <div id="landing-view" class="">
+        <header class="landing-header">
+            <div class="logo">
+                <div class="logo-icon">F</div>
+                <span>Flex</span>Job
+            </div>
+            <div class="header-actions">
+                <button id="btn-lang-pt" class="btn-lang active">PT</button>
+                <button id="btn-lang-en" class="btn-lang">EN</button>
+                <button class="btn-outline" onclick="toggleAuthForm(false)" data-i18n="btnLogin">Entrar</button>
+                <button class="btn-primary" onclick="toggleAuthForm(true)" data-i18n="btnRegister">Criar Conta</button>
+            </div>
+        </header>
+
+        <main class="landing-hero">
+            <div class="badge" data-i18n="tagline">Trabalho flexível ao teu ritmo</div>
+            <h1 id="landing-title">O mercado de trabalho local<span> no teu mapa</span></h1>
+            <p data-i18n="txtSmenaStyle">Encontra ajuda ou ganha dinheiro extra em minutos, perto de ti. Sem entrevistas, sem currículos, com pagamento seguro.</p>
+            
+            <div class="cta-group">
+                <button class="btn-primary" style="padding: 14px 28px; font-size: 1.1rem;" onclick="toggleAuthForm(true)" data-i18n="btnRegister">Começar Agora</button>
+                <button class="btn-outline" style="padding: 14px 28px; font-size: 1.1rem;" onclick="toggleAuthForm(false)" data-i18n="btnLogin">Iniciar Sessão</button>
+            </div>
+
+            <!-- Stats section -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">100%</div>
+                    <div class="stat-label" data-i18n="roleWorker">Trabalhadores Flexíveis</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">0</div>
+                    <div class="stat-label" data-i18n="statusOpen">Tarefas Abertas</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">&lt; 15m</div>
+                    <div class="stat-label">Tempo de Correspondência</div>
+                </div>
+            </div>
+
+            <!-- Login / Register Card Box inside landing -->
+            <div class="auth-container" id="auth-box-wrapper" style="margin-top: 4rem; width: 100%;">
+                <!-- Login Box -->
+                <div id="auth-login-box" class="">
+                    <div class="auth-header">
+                        <h2 data-i18n="txtWelcomeBack">Bem-vindo de volta!</h2>
+                        <p data-i18n="btnLogin">Entra na tua conta para ver o mapa</p>
+                    </div>
+                    <form id="auth-login-form">
+                        <div class="form-group">
+                            <label for="login-email">Email</label>
+                            <input type="email" id="login-email" required placeholder="exemplo@gmail.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="login-pass">Palavra-passe</label>
+                            <input type="password" id="login-pass" required placeholder="••••••••">
+                        </div>
+                        <button type="submit" class="btn-primary" style="width:100%; padding:12px; margin-top:10px;" data-i18n="btnLogin">Entrar</button>
+                    </form>
+                    <div class="auth-footer">
+                        <span data-i18n="txtCreateAccount" onclick="toggleAuthForm(true)" class="auth-link">Ainda não tens conta? Regista-te</span>
+                    </div>
+                </div>
+
+                <!-- Register Box -->
+                <div id="auth-register-box" class="hidden">
+                    <div class="auth-header">
+                        <h2 data-i18n="txtJoinFlexJob">Junta-te ao FlexJob</h2>
+                        <p data-i18n="btnRegister">Regista-te para começar a trabalhar ou contratar</p>
+                    </div>
+                    <form id="auth-register-form">
+                        <div class="form-group">
+                            <label for="reg-name">Nome Completo</label>
+                            <input type="text" id="reg-name" required placeholder="João Silva">
+                        </div>
+                        <div class="form-group">
+                            <label for="reg-email">Email</label>
+                            <input type="email" id="reg-email" required placeholder="exemplo@gmail.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="reg-pass">Palavra-passe</label>
+                            <input type="password" id="reg-pass" required placeholder="Mínimo 6 caracteres">
+                        </div>
+                        <div class="form-group">
+                            <label data-i18n="lblCategory">Estou aqui para...</label>
+                            <div class="role-selector">
+                                <div class="role-option selected" data-role="worker" onclick="selectRole('worker')">
+                                    <i class="ri-user-search-line" style="font-size:1.5rem; display:block; margin-bottom:4px;"></i>
+                                    <span data-i18n="roleWorker">Trabalhar</span>
+                                </div>
+                                <div class="role-option" data-role="employer" onclick="selectRole('employer')">
+                                    <i class="ri-briefcase-line" style="font-size:1.5rem; display:block; margin-bottom:4px;"></i>
+                                    <span data-i18n="roleEmployer">Contratar</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-primary" style="width:100%; padding:12px; margin-top:10px;" data-i18n="btnRegister">Criar Conta</button>
+                    </form>
+                    <div class="auth-footer">
+                        <span data-i18n="txtHaveAccount" onclick="toggleAuthForm(false)" class="auth-link">Já tens conta? Inicia sessão</span>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ==============================================
+         2. APP VIEW (Authenticated dashboard)
+         ============================================== -->
+    <div id="app-view" class="hidden">
+        
+        <!-- App Top Overlay (Floating search and language) -->
+        <div class="app-header-top">
+            <div class="search-bar-container">
+                <i class="ri-search-line search-icon"></i>
+                <input type="search" id="search-input" data-i18n="searchPlaceholder" placeholder="Procurar tarefas..." onkeypress="onSearchKeyPress(event)">
+            </div>
+            <div class="lang-toggle-container">
+                <!-- Share style of top actions -->
+            </div>
+        </div>
+
+        <!-- Sidebar / Drawer Container (Left Side on PC, Bottom sheet on Mobile) -->
+        <aside class="app-sidebar" id="app-sidebar">
+            
+            <!-- Sidebar Header with profile summary -->
+            <div class="sidebar-header">
+                <div class="user-profile-summary">
+                    <img src="" alt="Avatar" class="user-avatar profile-avatar-img">
+                    <div class="user-info-text">
+                        <span class="user-name profile-user-name">Carregando...</span>
+                        <div class="user-meta">
+                            <span class="profile-user-role">Trabalhador</span> •
+                            <span class="rating-star">★</span> <span class="profile-user-rating">5.0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Buttons -->
+            <nav class="sidebar-tabs">
+                <button class="tab-btn active" data-tab="feed" onclick="switchTab('feed')">
+                    <i class="ri-map-pin-2-line"></i> <span data-i18n="filterAll">Tarefas</span>
+                </button>
+                <button class="tab-btn" data-tab="my-jobs" onclick="switchTab('my-jobs')">
+                    <i class="ri-task-line"></i> <span data-i18n="btnMyJobs">Atividade</span>
+                </button>
+                <button class="tab-btn" data-tab="messages" onclick="switchTab('messages')">
+                    <i class="ri-message-3-line"></i> <span data-i18n="btnMessages">Chat</span>
+                </button>
+                <button class="tab-btn" data-tab="profile" onclick="switchTab('profile')">
+                    <i class="ri-user-settings-line"></i> <span data-i18n="btnProfile">Perfil</span>
+                </button>
+            </nav>
+
+            <!-- Sidebar scroll content -->
+            <div class="sidebar-content">
+                
+                <!-- Tab: Job Feed -->
+                <div id="panel-feed" class="panel-view">
+                    <!-- Quick action buttons -->
+                    <button class="btn-primary hidden" id="btn-post-job-trigger" onclick="openPostJobModal()" style="width:100%; padding:12px; margin-bottom:1rem; font-weight:700;">
+                        <i class="ri-add-circle-line"></i> <span data-i18n="btnPostJob">Publicar Tarefa</span>
+                    </button>
+                    <button class="btn-primary hidden" id="btn-avail-trigger" onclick="toggleAvailabilityPanel(true)" style="width:100%; padding:12px; margin-bottom:1rem; font-weight:700; background:var(--success);">
+                        <i class="ri-radar-line"></i> <span data-i18n="btnAvailability">Estou Disponível</span>
+                    </button>
+
+                    <!-- Feed List -->
+                    <div class="job-feed" id="jobs-feed-list">
+                        <!-- Dynamic list goes here -->
+                    </div>
+                </div>
+
+                <!-- Tab: My Tasks Activities -->
+                <div id="panel-my-jobs" class="panel-view hidden">
+                    <div class="job-feed" id="my-jobs-list">
+                        <!-- Dynamic list -->
+                    </div>
+                </div>
+
+                <!-- Tab: Messages Overview -->
+                <div id="panel-messages" class="panel-view hidden">
+                    <div class="applicants-list" id="chat-inbox-list">
+                        <!-- Active matches list -->
+                    </div>
+                </div>
+
+                <!-- Tab: Active Chat View (Inside messages container context) -->
+                <div id="panel-active-chat" class="panel-view hidden" style="height:100%;">
+                    <div class="panel-header">
+                        <button class="btn-back" onclick="closeChat()"><i class="ri-arrow-left-line"></i></button>
+                        <span class="panel-title" id="chat-partner-name">Conversa</span>
+                    </div>
+                    <div class="chat-container">
+                        <div class="chat-messages" id="chat-messages-container">
+                            <!-- Messages bubbles dynamically populated -->
+                        </div>
+                        <form id="chat-form" class="chat-input-bar">
+                            <input type="text" id="chat-input" data-i18n="lblPlaceholderChat" placeholder="Escreve uma mensagem...">
+                            <button type="submit" class="btn-primary"><i class="ri-send-plane-line"></i></button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Tab: Profile Settings -->
+                <div id="panel-profile" class="panel-view hidden">
+                    <div class="panel-scroll-content">
+                        <form id="profile-form">
+                            <div class="form-group" style="align-items:center; margin-bottom:1.5rem;">
+                                <img src="" alt="Avatar" class="user-avatar profile-avatar-img" style="width:80px; height:80px;">
+                            </div>
+                            <div class="form-group">
+                                <label for="profile-name-input">Nome</label>
+                                <input type="text" id="profile-name-input" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="profile-bio-input" data-i18n="lblSkills">Biografia / Habilidades</label>
+                                <textarea id="profile-bio-input" rows="4" data-i18n="txtPlaceholderBio" placeholder="Biografia..."></textarea>
+                            </div>
+                            <button type="submit" class="btn-primary" style="width:100%; margin-top:1rem;" data-i18n="lblSaveProfile">Guardar Alterações</button>
+                        </form>
+                        
+                        <div id="profile-reviews-section" style="margin-top:2.5rem;">
+                            <h3 style="font-size:1.1rem; font-weight:700; margin-bottom:1rem;" data-i18n="lblReviews">Avaliações Recebidas</h3>
+                            <div id="profile-reviews-list" style="display:flex; flex-direction:column; gap:12px;">
+                                <!-- Reviews list dynamically populated -->
+                            </div>
+                        </div>
+
+                        <button class="btn-outline btn-logout" style="width:100%; margin-top:2rem; border-color:var(--danger); color:var(--danger);">
+                            <i class="ri-logout-box-r-line"></i> <span data-i18n="btnLogout">Terminar Sessão</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Contextual View: Job Details panel -->
+                <div id="panel-job-detail" class="panel-view hidden">
+                    <div class="panel-header">
+                        <button class="btn-back" onclick="hideJobDetails()"><i class="ri-arrow-left-line"></i></button>
+                        <span class="panel-title" data-i18n="filterAll">Detalhes da Tarefa</span>
+                    </div>
+                    <div class="panel-scroll-content" style="padding-right:4px;">
+                        <h2 id="detail-title" style="font-size:1.4rem; font-weight:800; margin-bottom:8px;">Título da tarefa</h2>
+                        <div id="detail-category" class="job-category-badge" style="margin-bottom:1.25rem;">Categoria</div>
+                        
+                        <div style="background:var(--bg-main); border:1px solid var(--border-color); border-radius:12px; padding:1rem; margin-bottom:1.5rem; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                            <div>
+                                <span style="font-size:0.75rem; color:var(--text-muted); display:block; font-weight:600; text-transform:uppercase;" data-i18n="lblCompensation">Remuneração</span>
+                                <span id="detail-pay" style="font-size:1.4rem; font-weight:800; color:var(--brand-primary);">0€</span>
+                                <span id="detail-pay-type" style="font-size:0.8rem; color:var(--text-secondary);">fixo</span>
+                            </div>
+                            <div>
+                                <span style="font-size:0.75rem; color:var(--text-muted); display:block; font-weight:600; text-transform:uppercase;" data-i18n="lblDuration">Duração</span>
+                                <span id="detail-duration" style="font-size:1.1rem; font-weight:700; color:var(--text-primary);">1 hora</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom:1.5rem;">
+                            <label data-i18n="lblDescription">Descrição</label>
+                            <p id="detail-desc" style="font-size:0.95rem; color:var(--text-secondary); line-height:1.5; white-space:pre-line;">Descrição detalhada...</p>
+                        </div>
+
+                        <div class="form-group" style="margin-bottom:1.5rem;">
+                            <label data-i18n="lblAddress">Localização</label>
+                            <p id="detail-address" style="font-size:0.9rem; color:var(--text-secondary);"><i class="ri-map-pin-line" style="color:var(--brand-primary);"></i> Endereço</p>
+                        </div>
+
+                        <hr style="border:none; border-top:1px solid var(--border-color); margin-bottom:1.5rem;">
+
+                        <div class="user-profile-summary" style="margin-bottom:2rem; background:var(--bg-main); border:1px solid var(--border-color); padding:12px; border-radius:10px;">
+                            <img id="detail-employer-avatar" src="" alt="Contratante" class="user-avatar">
+                            <div class="user-info-text">
+                                <span style="font-size:0.75rem; color:var(--text-muted); font-weight:600; text-transform:uppercase;">Contratante</span>
+                                <span id="detail-employer-name" class="user-name">Nome do Contratante</span>
+                                <div class="user-meta">
+                                    <span class="rating-star">★</span> <span id="detail-employer-rating">5.0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Apply or Chat actions container -->
+                        <div id="job-action-container"></div>
+                    </div>
+                </div>
+
+                <!-- Contextual View: Worker Availability drawer -->
+                <div id="availability-panel" class="panel-view hidden">
+                    <div class="panel-header">
+                        <button class="btn-back" onclick="toggleAvailabilityPanel(false)"><i class="ri-arrow-left-line"></i></button>
+                        <span class="panel-title" data-i18n="lblAvailabilitySettings">Disponibilidade</span>
+                    </div>
+                    <div class="panel-scroll-content">
+                        <form id="availability-form">
+                            <div class="switch-container">
+                                <span style="font-weight:600; font-size:0.9rem;" data-i18n="lblActiveAvailability">Disponibilidade Ativa</span>
+                                <label class="switch">
+                                    <input type="checkbox" id="avail-active" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1.5rem; line-height:1.4;" data-i18n="txtSelectLocationOnMap">Move o mapa ou clica nele para definir a tua localização de partida para tarefas.</p>
+                            <div class="form-group">
+                                <label for="avail-radius" data-i18n="lblAvailabilityRadius">Raio de Ação (km)</label>
+                                <input type="number" id="avail-radius" min="1" max="50" value="5" oninput="onRadiusChange(this.value)" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="avail-rate" data-i18n="lblHourlyRate">Preço por Hora mínimo (€/h)</label>
+                                <input type="number" id="avail-rate" min="5" value="8" required>
+                            </div>
+                            <button type="submit" class="btn-primary" style="width:100%; margin-top:1.5rem; background:var(--success);" data-i18n="lblSaveProfile">Ativar Disponibilidade</button>
+                        </form>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- ==============================================
+             3. INTERACTIVE MAP SECTION
+             ============================================== -->
+        <section class="app-map-container">
+            <div id="map"></div>
+
+            <!-- Mobile quick toggles on map (Floating buttons) -->
+            <div class="map-floating-panel">
+                <!-- Additional quick actions if any -->
+            </div>
+        </section>
+
+        <!-- Mobile Bottom Nav Bar -->
+        <nav class="mobile-bottom-nav">
+            <button class="mobile-nav-btn active" onclick="switchTab('feed')">
+                <i class="ri-map-pin-2-line"></i>
+                <span data-i18n="filterAll">Tarefas</span>
+            </button>
+            <button class="mobile-nav-btn" onclick="switchTab('my-jobs')">
+                <i class="ri-task-line"></i>
+                <span data-i18n="btnMyJobs">Atividade</span>
+            </button>
+            <button class="mobile-nav-btn" onclick="switchTab('messages')">
+                <i class="ri-message-3-line"></i>
+                <span data-i18n="btnMessages">Chat</span>
+            </button>
+            <button class="mobile-nav-btn" onclick="switchTab('profile')">
+                <i class="ri-user-settings-line"></i>
+                <span data-i18n="btnProfile">Perfil</span>
+            </button>
+        </nav>
+    </div>
+
+    <!-- ==============================================
+         4. MODAL: POST JOB FORM (Employer only)
+         ============================================== -->
+    <div id="post-job-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closePostJobModal()"><i class="ri-close-line"></i></button>
+            <h2 style="font-size:1.4rem; font-weight:800; margin-bottom:1.5rem;" data-i18n="btnPostJob">Publicar Nova Tarefa</h2>
+            <form id="post-job-form">
+                
+                <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:1rem; line-height:1.4;" data-i18n="txtSelectLocationOnMap">Clica no mapa por trás deste modal para definir a localização exata da tarefa.</p>
+
+                <div class="form-group">
+                    <label for="post-title" data-i18n="lblTitle">Título da tarefa</label>
+                    <input type="text" id="post-title" placeholder="Ex: Ajudar a descarregar caixas" required>
+                </div>
+
+                <div class="form-group">
+                    <label data-i18n="lblCategory">Categoria</label>
+                    <input type="hidden" id="post-category" value="Outros Serviços">
+                    <div class="categories-grid">
+                        <button type="button" class="category-select-btn" onclick="selectCategory('Restauração', this)" data-i18n="filterRestoration">Restauração</button>
+                        <button type="button" class="category-select-btn" onclick="selectCategory('Entregas', this)" data-i18n="filterDelivery">Entregas</button>
+                        <button type="button" class="category-select-btn" onclick="selectCategory('Lojas & Retalho', this)" data-i18n="filterRetail">Lojas</button>
+                        <button type="button" class="category-select-btn" onclick="selectCategory('Logística', this)" data-i18n="filterLogistics">Logística</button>
+                        <button type="button" class="category-select-btn" onclick="selectCategory('Limpezas', this)" data-i18n="filterCleaning">Limpeza</button>
+                        <button type="button" class="category-select-btn selected" onclick="selectCategory('Outros Serviços', this)" data-i18n="filterOthers">Outros</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="post-desc" data-i18n="lblDescription">Descrição das tarefas</label>
+                    <textarea id="post-desc" rows="3" placeholder="O que o trabalhador precisará de fazer?" required></textarea>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div class="form-group">
+                        <label for="post-pay" data-i18n="lblCompensation">Remuneração (€)</label>
+                        <input type="number" id="post-pay" min="5" value="15" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="post-pay-type">Tipo de Pagamento</label>
+                        <select id="post-pay-type">
+                            <option value="fixed" data-i18n="lblFixed">Valor Fixo</option>
+                            <option value="hourly" data-i18n="lblHourly">Preço por Hora</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div class="form-group">
+                        <label for="post-duration" data-i18n="lblDuration">Duração estimada</label>
+                        <input type="text" id="post-duration" placeholder="Ex: 2 horas" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="post-address">Endereço selecionado</label>
+                        <input type="text" id="post-address" placeholder="Coordenadas no mapa" readonly required>
+                    </div>
+                </div>
+
+                <!-- Hidden inputs for location coordinates -->
+                <input type="hidden" id="post-lat">
+                <input type="hidden" id="post-lng">
+
+                <button type="submit" class="btn-primary" style="width:100%; padding:12px; margin-top:1.5rem;" data-i18n="btnPostJob">Publicar Tarefa no Mapa</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Scripts dependencies -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="js/lang.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
