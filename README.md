@@ -1,32 +1,34 @@
 # FlexJob
 
-FlexJob é um projeto de marketplace de trabalho temporário em Portugal, com:
+FlexJob é um projeto de marketplace de trabalho temporário em Portugal.
+
+O projeto inclui:
 - frontend em React + TypeScript + Vite
 - backend em ASP.NET Core (.NET 8)
-- base de dados MySQL via Docker Compose
+- base de dados MySQL (via Docker Compose)
 
-O objetivo é ligar rapidamente empresas/particulares que precisam de serviços com trabalhadores flexíveis disponíveis.
+O objetivo é ligar empresas/particulares que precisam de serviços com trabalhadores flexíveis disponíveis.
 
 ## Estrutura do repositório
 
 - `frontend/` - aplicação React + TypeScript
 - `backend/` - API ASP.NET Core e lógica de autenticação
-- `docker-compose.yml` - orquestração das três peças: frontend, backend e MySQL
+- `docker-compose.yml` - orquestração do frontend, backend e MySQL
 
 ## Pré-requisitos
 
-Instale os seguintes itens no seu computador:
+Instale as seguintes ferramentas no seu computador:
 
 1. Git: https://git-scm.com/
 2. Node.js LTS: https://nodejs.org/
 3. .NET 8 SDK: https://dotnet.microsoft.com/
 4. Docker Desktop: https://www.docker.com/products/docker-desktop
 
-> Se não usar Docker, o frontend e backend também podem ser executados localmente separadamente.
+> O Docker é a forma mais fácil de correr o projeto com frontend, backend e base de dados juntos.
 
 ## Como começar
 
-### 1. Executar usando Docker Compose
+### Opção 1 - Executar com Docker Compose (recomendado)
 
 No diretório raiz do projeto:
 
@@ -34,12 +36,18 @@ No diretório raiz do projeto:
 docker compose up --build
 ```
 
-O Docker irá criar e executar:
-- frontend na porta `5173`
-- backend na porta `8080`
-- MySQL na porta `3306`
+O Docker irá iniciar:
+- frontend em `http://localhost:5173`
+- backend em `http://localhost:8080`
+- MySQL em `localhost:3306`
 
-### 2. Executar apenas o frontend localmente
+Para parar:
+
+```bash
+docker compose down
+```
+
+### Opção 2 - Executar apenas o frontend localmente
 
 ```bash
 cd frontend
@@ -53,7 +61,7 @@ Depois abra no navegador o endereço que o Vite mostrar, normalmente:
 http://localhost:5173
 ```
 
-### 3. Executar apenas o backend localmente
+### Opção 3 - Executar apenas o backend localmente
 
 ```bash
 cd backend
@@ -67,44 +75,54 @@ O backend ficará disponível em:
 http://localhost:8080
 ```
 
-> O backend usa MySQL. Para executar localmente sem Docker, deve ter uma instância MySQL disponível e atualizar a string de ligação em `backend/Program.cs` ou em variáveis de ambiente.
+> Se executar o backend localmente sem Docker, certifique-se de ter MySQL em execução e atualize a string de ligação no `CONNECTION_STRING` se necessário.
+
+## Branch principal: `main` vs `master`
+
+No Git, `main` e `master` são apenas nomes de branch; não há diferença técnica entre eles. O GitHub mudou a branch padrão para `main` nos últimos anos, mas projetos mais antigos ainda podem usar `master`.
+
+Neste projeto vamos usar `main` porque é o nome mais comum hoje.
 
 ## Como publicar no GitHub
 
-1. Inicializar o repositório Git localmente:
+1. Inicialize o repositório Git localmente (se ainda não estiver inicializado):
 
 ```bash
 git init
 ```
 
-2. Adicionar todos os ficheiros e fazer o primeiro commit:
+2. Adicione todos os ficheiros e faça o primeiro commit:
 
 ```bash
 git add .
 git commit -m "Initial commit for FlexJob"
 ```
 
-3. Criar um repositório no GitHub (pelo site) e copiar o URL remoto.
-
-4. Adicionar o remoto e enviar:
+3. Adicione o remoto GitHub e envie para `main`:
 
 ```bash
-git remote add origin https://github.com/SEU_USUARIO/NOME_DO_REPO.git
+git remote add origin https://github.com/SergioKylo/FlexJob.git
 git branch -M main
 git push -u origin main
+```
+
+4. Se quiser remover a branch `master` do GitHub depois de confirmar que `main` está OK:
+
+```bash
+git push origin --delete master
 ```
 
 ## Observações importantes
 
 - O frontend está configurado com Leaflet e OpenStreetMap.
 - O backend usa cookies para autenticação e uma base de dados MySQL.
-- O `docker-compose.yml` já inclui as definições para frontend, backend e MySQL.
-- O projeto ainda é uma demo e não está pronto para produção sem ajustes de segurança e dados reais.
+- O `docker-compose.yml` inclui frontend, backend e MySQL.
+- O projeto é uma demo e precisa de melhorias de segurança antes de produção.
 
-## Pontos de melhoria
+## Próximos passos
 
-- Autenticação real com JWT ou OAuth
+- Adicionar autenticação real com JWT ou OAuth
 - Validação de formulários e regras de negócio
-- Base de dados real para tarefas e perfis
-- Segurança de passwords e conexões HTTPS
-- Deploy para um serviço em nuvem
+- Guardar dados reais em base de dados
+- Proteger passwords e usar HTTPS
+- Fazer deploy num serviço em nuvem
