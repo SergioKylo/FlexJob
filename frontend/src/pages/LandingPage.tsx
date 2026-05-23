@@ -22,12 +22,6 @@ const REGIONS = [
   { name: "Évora (Alentejo)",        lat: 38.5714, lng: -7.9096  },
 ];
 
-const HOW_IT_WORKS = [
-  { step: "01", title: "Registo Rápido", desc: "Escolha o seu perfil (Trabalhador ou Empreendedor), selecione a sua região e comece a interagir instantaneamente.", accent: "#ffd233" },
-  { step: "02", title: "Mapa Interativo", desc: "Indique a morada exata do trabalho e localizaremos no mapa. Trabalhadores ativos encontram vagas próximas com facilidade.", accent: "#22c97a" },
-  { step: "03", title: "Chat em Tempo Real", desc: "Comunique diretamente por mensagens instantâneas. Tire dúvidas e acerte detalhes operacionais antes de começar.", accent: "#4a90e2" },
-  { step: "04", title: "Reputação & Ganhos", desc: "Finalize tarefas pela aplicação, receba na carteira digital e acumule avaliações positivas para subir no ranking.", accent: "#f06060" },
-];
 
 export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingPageProps) {
   const [authMode, setAuthMode] = useState<"signup" | "login">("signup");
@@ -218,30 +212,6 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
         </aside>
       </main>
 
-      {/* How it works */}
-      <section style={{ padding: "3rem clamp(16px, 5vw, 48px) 4rem" }}>
-        <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
-          <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>Como funciona</p>
-          <h2 style={{ fontSize: "clamp(1.5rem, 3vw, 2.25rem)", fontWeight: "700" }}>FlexJob em 4 passos simples</h2>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1.25rem", maxWidth: "1100px", margin: "0 auto" }}>
-          {HOW_IT_WORKS.map((item) => (
-            <div
-              key={item.step}
-              style={{ padding: "1.5rem", borderRadius: "16px", border: "1px solid var(--line)", background: "var(--surface)", position: "relative", overflow: "hidden" }}
-            >
-              <div style={{ fontSize: "2.5rem", fontWeight: "900", color: item.accent, opacity: 0.15, position: "absolute", top: "0.5rem", right: "0.75rem", lineHeight: 1 }}>
-                {item.step}
-              </div>
-              <div style={{ fontSize: "0.75rem", fontWeight: "800", color: item.accent, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "0.5rem" }}>
-                {item.step}
-              </div>
-              <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "var(--ink)", marginBottom: "0.6rem" }}>{item.title}</h3>
-              <p style={{ fontSize: "0.85rem", color: "var(--muted)", lineHeight: "1.55", margin: 0 }}>{item.desc}</p>
-            </div>
-          ))}
-        </div>
-      </section>
     </section>
   );
 }

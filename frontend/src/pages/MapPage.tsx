@@ -58,9 +58,9 @@ function iconFor(item: Opportunity, mode: WorkMode, active: boolean) {
   });
 }
 
-export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initialWorkers, matches, onCreateMatch, onModeChange, t, user, onRefresh, onStartChat }: MapPageProps) {
+export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCreateMatch, onModeChange, t, user, onRefresh, onStartChat }: MapPageProps) {
   const isEmployer = user.role === "employer";
-  const effectiveMode: WorkMode = isEmployer ? "work" : "need";
+  const effectiveMode: WorkMode = "need"; // Both employers and workers see jobs on the map
 
   const [activeId, setActiveId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
@@ -69,12 +69,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
 
   // Dynamic lists from backend
   const [jobs, setJobs] = useState<Opportunity[]>(initialNeeds);
-  const [workers, setWorkers] = useState<Opportunity[]>(initialWorkers);
   const [loading, setLoading] = useState(false);
-
-  // Reviews list for worker details
-  const [reviews, setReviews] = useState<any[]>([]);
-  const [loadingReviews, setLoadingReviews] = useState(false);
 
   const dialogRef = useRef<HTMLDialogElement>(null);
 
@@ -105,13 +100,8 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
   const loadData = async () => {
     setLoading(true);
     try {
-      if (isEmployer) {
-        const data = await api.getWorkers(user.lat, user.lng);
-        setWorkers(data);
-      } else {
-        const data = await api.getJobs(user.lat, user.lng);
-        setJobs(data);
-      }
+      const data = await api.getJobs(user.lat, user.lng);
+      setJobs(data);
     } catch (err) {
       console.error("Error loading map data:", err);
     } finally {
@@ -143,20 +133,8 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
     }
   }, [user]);
 
-  // Handle worker reviews loading when a worker is selected
-  useEffect(() => {
-    if (effectiveMode === "work" && activeId) {
-      setLoadingReviews(true);
-      api.getReviews(activeId)
-        .then((data) => setReviews(data))
-        .catch((err) => console.error("Error fetching reviews:", err))
-        .finally(() => setLoadingReviews(false));
-    } else {
-      setReviews([]);
-    }
-  }, [activeId, effectiveMode]);
 
-  const rawData = effectiveMode === "need" ? jobs : workers;
+  const rawData = jobs;
 
   const filtered = useMemo(() => {
     const normalized = query.toLowerCase();
@@ -270,9 +248,6 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
       setShowAvailabilityForm(false);
       showToast("A sua disponibilidade foi atualizada com sucesso!");
       
-      // Reload workers
-      const freshWorkers = await api.getWorkers(user.lat, user.lng);
-      setWorkers(freshWorkers);
       if (onRefresh) onRefresh();
     } catch (err: any) {
       alert(err.message || "Erro ao atualizar disponibilidade.");
@@ -284,10 +259,10 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
       <section className="hero-band" style={{ paddingBottom: "10px" }}>
         <div>
           <p className="eyebrow">{isEmployer ? "Painel de Empreendedor" : "Painel de Trabalhador"}</p>
-          <h1>{isEmployer ? "Encontre profissionais perto de si." : "Oportunidades em tempo real na sua área."}</h1>
+          <h1>{isEmployer ? "Vagas de trabalho na sua região." : "Oportunidades em tempo real na sua área."}</h1>
         </div>
         <div className="hero-stats">
-          <span><strong>{filtered.length}</strong><small>{isEmployer ? "profissionais ativos" : "vagas disponíveis"}</small></span>
+          <span><strong>{filtered.length}</strong><small>vagas disponíveis</small></span>
           <span><strong>{user.rating?.toFixed(1) ?? "5.0"}</strong><small>A minha avaliação</small></span>
           <span><strong>{user.lat ? "Focado" : "Geral"}</strong><small>{user.lat ? "Região Selecionada" : "Portugal"}</small></span>
         </div>
@@ -399,7 +374,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
               {/* Search and Filters */}
               <div className="search-box">
                 <Search size={18} style={{ color: "var(--muted)" }} />
-                <input placeholder={isEmployer ? "Pesquisar trabalhadores por nome ou bio" : t("search")} value={query} onChange={(event) => setQuery(event.target.value)} />
+                <input placeholder={t("search")} value={query} onChange={(event) => setQuery(event.target.value)} />
               </div>
 
               <div className="filters">
@@ -414,7 +389,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
                 <label>{t("sortBy")}</label>
                 <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)}>
                   <option value="match">{t("bestMatch")}</option>
-                  <option value="pay">{isEmployer ? "Preço/h pretendido" : t("highestPay")}</option>
+                  <option value="pay">{t("highestPay")}</option>
                   <option value="distance">{t("nearest")}</option>
                   <option value="rating">{t("bestRating")}</option>
                 </select>
@@ -430,7 +405,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
                 {filtered.map((item) => (
                   <article className={`job-card ${activeItem?.id === item.id ? "active" : ""} ${isMatched(item) ? "matched" : ""}`} key={item.id} onClick={() => setActiveId(item.id)}>
                     <div className="job-meta">
-                      <span className="tag">{isEmployer ? "Trabalhador" : t(item.type)}</span>
+                      <span className="tag">{t(item.type)}</span>
                       <span className="pay">EUR {item.pay}/h</span>
                     </div>
                     <h3>{item.title}</h3>
@@ -443,20 +418,18 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
                     <small style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "4px" }}>
                       <span>📍 {item.city}</span>
                       <span>• 🚗 {item.distance} km</span>
-                      {isEmployer ? (
-                        <span>• 🏠 Raio: {item.hours} km</span>
-                      ) : (
-                        <span>• ⏱️ {item.time}</span>
-                      )}
+                      <span>• ⏱️ {item.time}</span>
                     </small>
                     <div className="job-foot" style={{ marginTop: "10px" }}>
                       <span className="score" style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                         <Star size={12} fill="currentColor" />
                         <span>{item.rating.toFixed(1)} Classificação</span>
                       </span>
-                      <button onClick={(event) => { event.stopPropagation(); onCreateMatch(item); }}>
-                        {isEmployer ? "Convidar" : isMatched(item) ? "Candidatado" : t("apply")}
-                      </button>
+                      {!isEmployer && (
+                        <button onClick={(event) => { event.stopPropagation(); onCreateMatch(item); }}>
+                          {isMatched(item) ? "Candidatado" : t("apply")}
+                        </button>
+                      )}
                     </div>
                   </article>
                 ))}
@@ -501,13 +474,13 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <span className="tag" style={{ marginBottom: "6px", display: "inline-block" }}>
-                    {isEmployer ? "Trabalhador Disponível" : t(activeItem.type)}
+                    {t(activeItem.type)}
                   </span>
                   <h3 style={{ fontSize: "1.1rem", fontWeight: "700", margin: "4px 0 2px", color: "var(--ink)", lineHeight: 1.2 }}>
                     {activeItem.title}
                   </h3>
                   <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0 }}>
-                    {isEmployer ? activeItem.description.slice(0, 55) + (activeItem.description.length > 55 ? "…" : "") : `Por ${activeItem.requester}`}
+                    Por {activeItem.requester}
                   </p>
                 </div>
                 <button onClick={() => setActiveId(null)} className="reset-button" style={{ color: "var(--muted)", padding: "4px", flexShrink: 0, marginLeft: "8px" }}>
@@ -532,53 +505,24 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
               </div>
 
               {/* Job Photo */}
-              {!isEmployer && activeItem.photo && (
+              {activeItem.photo && (
                 <div style={{ marginBottom: "12px", borderRadius: "12px", overflow: "hidden", border: "1px solid var(--line)" }}>
                   <img src={activeItem.photo} alt={activeItem.title} style={{ width: "100%", maxHeight: "140px", objectFit: "cover", display: "block" }} />
                 </div>
               )}
 
-              {/* Reviews for workers */}
-              {isEmployer && (
-                <div style={{ marginBottom: "12px", borderTop: "1px solid var(--line)", paddingTop: "10px" }}>
-                  <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--muted)", marginBottom: "8px" }}>Avaliações</h4>
-                  {loadingReviews ? (
-                    <div style={{ fontSize: "12px", color: "var(--muted)" }}>A carregar...</div>
-                  ) : reviews.length === 0 ? (
-                    <div style={{ fontSize: "12px", color: "var(--muted)", fontStyle: "italic" }}>Sem avaliações ainda.</div>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "100px", overflowY: "auto" }}>
-                      {reviews.map((r: any, idx: number) => (
-                        <div key={idx} style={{ background: "var(--surface2)", padding: "8px 10px", borderRadius: "8px", fontSize: "11px", border: "1px solid var(--line)" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "700", marginBottom: "2px" }}>
-                            <span style={{ color: "var(--ink)" }}>{r.reviewer_name || "Empreendedor"}</span>
-                            <span style={{ color: "var(--yellow)" }}>★ {ConvertRating(r.rating)}</span>
-                          </div>
-                          <div style={{ color: "var(--muted)" }}>{r.comment || "Sem comentário."}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Description for jobs */}
-              {!isEmployer && (
-                <div style={{ marginBottom: "12px" }}>
-                  <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--muted)", marginBottom: "6px" }}>Descrição</h4>
-                  <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.45, margin: "0 0 4px" }}>{activeItem.description}</p>
-                  <p style={{ fontSize: "11px", color: "var(--muted)", margin: 0, opacity: 0.75 }}>⏳ {activeItem.time}</p>
-                </div>
-              )}
+              {/* Description */}
+              <div style={{ marginBottom: "12px" }}>
+                <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--muted)", marginBottom: "6px" }}>Descrição</h4>
+                <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.45, margin: "0 0 4px" }}>{activeItem.description}</p>
+                <p style={{ fontSize: "11px", color: "var(--muted)", margin: 0, opacity: 0.75 }}>⏳ {activeItem.time}</p>
+              </div>
 
               {/* Action buttons */}
               <div style={{ display: "flex", gap: "8px", borderTop: "1px solid var(--line)", paddingTop: "12px" }}>
                 <button
                   onClick={() => {
-                    const partnerId = isEmployer ? activeItem.id : (activeItem.employerId ?? 0);
-                    const partnerName = isEmployer ? activeItem.title : activeItem.requester;
-                    const jobId = isEmployer ? undefined : activeItem.id;
-                    onStartChat(partnerId, partnerName, undefined, jobId);
+                    onStartChat(activeItem.employerId ?? 0, activeItem.requester, undefined, activeItem.id);
                   }}
                   className="secondary"
                   style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", minHeight: "38px", fontSize: "13px", padding: "0 8px" }}
@@ -586,14 +530,16 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
                   <MessageCircle size={14} />
                   Mensagem
                 </button>
-                <button
-                  onClick={() => onCreateMatch(activeItem)}
-                  className={isMatched(activeItem) ? "secondary" : "primary"}
-                  disabled={isMatched(activeItem) && !isEmployer}
-                  style={{ flex: 1.5, minHeight: "38px", fontSize: "13px" }}
-                >
-                  {isEmployer ? "Convidar" : isMatched(activeItem) ? "✓ Candidatado" : "Candidatar-se"}
-                </button>
+                {!isEmployer && (
+                  <button
+                    onClick={() => onCreateMatch(activeItem)}
+                    className={isMatched(activeItem) ? "secondary" : "primary"}
+                    disabled={isMatched(activeItem)}
+                    style={{ flex: 1.5, minHeight: "38px", fontSize: "13px" }}
+                  >
+                    {isMatched(activeItem) ? "✓ Candidatado" : "Candidatar-se"}
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -698,9 +644,3 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
   );
 }
 
-// Utility to convert ratings from backend safely
-function ConvertRating(val: any): string {
-  if (val === null || val === undefined) return "5.0";
-  const num = Number(val);
-  return isNaN(num) ? "5.0" : num.toFixed(1);
-}

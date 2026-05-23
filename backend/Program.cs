@@ -974,6 +974,107 @@ webApp.MapPost("/api/payments/release", (HttpContext context, ReleasePaymentRequ
     return Results.Ok(new { message = "Pagamento libertado e trabalho concluído!", amount = pay });
 });
 
+// --- Accept Worker Directly (from chat) ---
+
+webApp.MapPost("/api/jobs/accept-worker", (HttpContext context, AcceptWorkerRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+
+    if (role != "employer")
+        return Results.Json(new { message = "Apenas empreendedores podem aceitar candidaturas." }, statusCode: 403);
+
+    var apps = Database.ExecuteQuery(
+        @"SELECT a.id, j.employer_id, j.status as job_status FROM applications a
+          JOIN jobs j ON a.job_id = j.id
+          WHERE a.job_id = @jobId AND a.worker_id = @workerId",
+        new() { { "@jobId", request.JobId }, { "@workerId", request.WorkerId } });
+
+    if (apps.Count == 0) return Results.NotFound(new { message = "Candidatura não encontrada." });
+    var app = apps[0];
+
+    if (Convert.ToInt32(app["employer_id"]) != userId)
+        return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
+
+    if (app["job_status"]?.ToString() == "accepted")
+        return Results.BadRequest(new { message = "Este trabalho já tem um trabalhador aceite." });
+
+    var appId = Convert.ToInt32(app["id"]);
+
+    if (request.Accept)
+    {
+        Database.ExecuteNonQuery("UPDATE applications SET status = 'accepted' WHERE id = @appId", new() { { "@appId", appId } });
+        Database.ExecuteNonQuery("UPDATE applications SET status = 'rejected' WHERE id != @appId AND job_id = @jobId",
+            new() { { "@appId", appId }, { "@jobId", request.JobId } });
+        Database.ExecuteNonQuery("UPDATE jobs SET status = 'accepted', worker_id = @workerId WHERE id = @jobId",
+            new() { { "@workerId", request.WorkerId }, { "@jobId", request.JobId } });
+
+        Database.ExecuteNonQuery(
+            @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, created_at)
+              VALUES (@from, @to, @jobId, @content, @createdAt)",
+            new()
+            {
+                { "@from", userId },
+                { "@to", request.WorkerId },
+                { "@jobId", request.JobId },
+                { "@content", "✅ Candidatura aceite! Aguarda o depósito em garantia antes de iniciar o trabalho." },
+                { "@createdAt", DateTime.UtcNow.ToString("o") }
+            });
+    }
+    else
+    {
+        Database.ExecuteNonQuery("UPDATE applications SET status = 'rejected' WHERE id = @appId", new() { { "@appId", appId } });
+    }
+
+    return Results.Ok(new { message = request.Accept ? "Candidatura aceite com sucesso!" : "Candidatura rejeitada." });
+});
+
+// --- Tip Endpoint ---
+
+webApp.MapPost("/api/payments/tip", (HttpContext context, TipRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+
+    if (role != "employer")
+        return Results.Json(new { message = "Apenas empreendedores podem dar gorjeta." }, statusCode: 403);
+
+    if (request.Amount <= 0)
+        return Results.BadRequest(new { message = "Valor de gorjeta inválido." });
+
+    var jobs = Database.ExecuteQuery("SELECT worker_id, employer_id, payment_status FROM jobs WHERE id = @jobId",
+        new() { { "@jobId", request.JobId } });
+    if (jobs.Count == 0) return Results.NotFound(new { message = "Trabalho não encontrado." });
+    var job = jobs[0];
+
+    if (Convert.ToInt32(job["employer_id"]) != userId)
+        return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
+
+    var paymentStatus = job["payment_status"]?.ToString() ?? "none";
+    if (paymentStatus != "released")
+        return Results.BadRequest(new { message = "Só pode dar gorjeta depois do pagamento ser confirmado." });
+
+    var workerId = Convert.ToInt32(job["worker_id"]);
+    Database.ExecuteNonQuery("UPDATE users SET wallet_balance = wallet_balance + @amount WHERE id = @workerId",
+        new() { { "@amount", request.Amount }, { "@workerId", workerId } });
+
+    Database.ExecuteNonQuery(
+        @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
+          VALUES (@from, @to, @jobId, @content, 'payment_released', @createdAt)",
+        new()
+        {
+            { "@from", userId },
+            { "@to", workerId },
+            { "@jobId", request.JobId },
+            { "@content", $"🎁 Gorjeta de €{request.Amount:F2} recebida! Obrigado pelo excelente trabalho!" },
+            { "@createdAt", DateTime.UtcNow.ToString("o") }
+        });
+
+    return Results.Ok(new { message = "Gorjeta enviada com sucesso!", amount = request.Amount });
+});
+
 // --- Wallet Endpoint ---
 
 webApp.MapGet("/api/wallet", (HttpContext context) =>

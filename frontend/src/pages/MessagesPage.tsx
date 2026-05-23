@@ -47,6 +47,9 @@ export function MessagesPage({
   const [payHours, setPayHours] = useState(1);
   const [payDate, setPayDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [payNotes, setPayNotes] = useState("");
+  const [showTipForm, setShowTipForm] = useState(false);
+  const [tipAmount, setTipAmount] = useState(5);
+  const [tipLoading, setTipLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -117,6 +120,7 @@ export function MessagesPage({
     setJobDetail(null);
     setShowRatingForm(false);
     setShowPayForm(false);
+    setShowTipForm(false);
     if (selectedConv && selectedConv.jobId > 0) {
       api.getJobDetail(selectedConv.jobId)
         .then(setJobDetail)
@@ -159,6 +163,36 @@ export function MessagesPage({
       alert(err.message || "Erro ao efetuar pagamento.");
     } finally {
       setPaymentLoading(false);
+    }
+  }
+
+  async function handleAcceptWorker(workerId: number, accept: boolean) {
+    if (!jobDetail) return;
+    try {
+      await api.acceptWorker(jobDetail.id, workerId, accept);
+      const updated = await api.getJobDetail(jobDetail.id);
+      setJobDetail(updated);
+      const jobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
+      const data = await api.getMessages(selectedConv!.partnerId, jobId);
+      setMessages(data);
+    } catch (err: any) {
+      alert(err.message || "Erro ao responder à candidatura.");
+    }
+  }
+
+  async function handleTip() {
+    if (!jobDetail) return;
+    setTipLoading(true);
+    try {
+      await api.tipWorker(jobDetail.id, tipAmount);
+      setShowTipForm(false);
+      const jobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
+      const data = await api.getMessages(selectedConv!.partnerId, jobId);
+      setMessages(data);
+    } catch (err: any) {
+      alert(err.message || "Erro ao dar gorjeta.");
+    } finally {
+      setTipLoading(false);
     }
   }
 
@@ -419,7 +453,14 @@ export function MessagesPage({
                     </p>
                   </div>
                 ) : (
-                  messages.map((msg) => <MessageBubble key={msg.id} msg={msg} userId={user.id ?? 0} />)
+                  messages.map((msg) => (
+                    <MessageBubble
+                      key={msg.id}
+                      msg={msg}
+                      userId={user.id ?? 0}
+                      onAcceptWorker={isEmployer && jobDetail?.status === "open" ? handleAcceptWorker : undefined}
+                    />
+                  ))
                 )}
                 <div ref={messagesEndRef} />
               </div>
@@ -428,10 +469,52 @@ export function MessagesPage({
               {showPaymentBar && (
                 <div className="msg-payment-bar">
                   {jobDone && (
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(34,201,122,0.1)", border: "1px solid rgba(34,201,122,0.25)", color: "var(--green)" }}>
-                      <CheckCircle size={16} />
-                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>Trabalho concluído · €{jobDetail!.pay.toFixed(2)} pagos</span>
-                    </div>
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(34,201,122,0.1)", border: "1px solid rgba(34,201,122,0.25)", color: "var(--green)" }}>
+                        <CheckCircle size={16} />
+                        <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>Trabalho concluído · €{jobDetail!.pay.toFixed(2)} pagos</span>
+                      </div>
+                      {isEmployer && (
+                        <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem", marginTop: "0.2rem" }}>
+                          {!showTipForm ? (
+                            <button
+                              onClick={() => setShowTipForm(true)}
+                              style={{ width: "100%", padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontWeight: "600", fontSize: "0.82rem", cursor: "pointer" }}
+                            >
+                              🎁 Dar Gorjeta ao Trabalhador
+                            </button>
+                          ) : (
+                            <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                              <span style={{ fontSize: "0.72rem", color: "var(--muted)", fontWeight: "600", textTransform: "uppercase" }}>Valor da gorjeta (€)</span>
+                              <input
+                                type="number"
+                                min={0.5}
+                                step={0.5}
+                                value={tipAmount}
+                                onChange={(e) => setTipAmount(parseFloat(e.target.value) || 5)}
+                                className="msg-input"
+                                style={{ padding: "0.5rem 0.7rem" }}
+                              />
+                              <div style={{ display: "flex", gap: "0.5rem" }}>
+                                <button
+                                  onClick={() => setShowTipForm(false)}
+                                  style={{ flex: 1, padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", cursor: "pointer", fontWeight: "600", fontSize: "0.82rem" }}
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  onClick={handleTip}
+                                  disabled={tipLoading}
+                                  style={{ flex: 2, padding: "0.5rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", cursor: "pointer", fontWeight: "700", fontSize: "0.82rem", opacity: tipLoading ? 0.6 : 1 }}
+                                >
+                                  {tipLoading ? "A enviar..." : `Dar €${tipAmount.toFixed(2)} de Gorjeta 🎁`}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {workerEscrow && !jobDone && (
@@ -531,7 +614,7 @@ export function MessagesPage({
   );
 }
 
-function MessageBubble({ msg, userId }: { msg: ChatMessage; userId: number }) {
+function MessageBubble({ msg, userId, onAcceptWorker }: { msg: ChatMessage; userId: number; onAcceptWorker?: (workerId: number, accept: boolean) => void }) {
   const isMe = msg.fromUserId === userId;
   const type = msg.messageType ?? "text";
 
@@ -571,10 +654,28 @@ function MessageBubble({ msg, userId }: { msg: ChatMessage; userId: number }) {
         <div style={{
           padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "85%",
           background: "rgba(255,210,51,0.1)", border: "1px solid rgba(255,210,51,0.25)",
-          display: "flex", alignItems: "center", gap: "0.6rem",
+          display: "flex", alignItems: "flex-start", gap: "0.6rem",
         }}>
-          <AlertCircle size={16} style={{ color: "var(--yellow-dark)", flexShrink: 0 }} />
-          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+          <AlertCircle size={16} style={{ color: "var(--yellow-dark)", flexShrink: 0, marginTop: "0.15rem" }} />
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+            {onAcceptWorker && (
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.6rem" }}>
+                <button
+                  onClick={() => onAcceptWorker(msg.fromUserId, true)}
+                  style={{ flex: 1, padding: "0.4rem 0.6rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #22c97a, #16a361)", color: "#fff", fontSize: "0.78rem", fontWeight: "700", cursor: "pointer" }}
+                >
+                  ✓ Aceitar
+                </button>
+                <button
+                  onClick={() => onAcceptWorker(msg.fromUserId, false)}
+                  style={{ flex: 1, padding: "0.4rem 0.6rem", borderRadius: "8px", border: "1px solid rgba(240,96,96,0.4)", background: "rgba(240,96,96,0.08)", color: "#f06060", fontSize: "0.78rem", fontWeight: "700", cursor: "pointer" }}
+                >
+                  ✗ Rejeitar
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     );

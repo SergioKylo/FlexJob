@@ -226,6 +226,20 @@ export const api = {
     return request<any>("/api/payments/release", { method: "POST", body: { jobId, rating, comment } as any });
   },
 
+  async acceptWorker(jobId: number, workerId: number, accept: boolean): Promise<{ message: string }> {
+    return request<{ message: string }>("/api/jobs/accept-worker", {
+      method: "POST",
+      body: { jobId, workerId, accept } as any,
+    });
+  },
+
+  async tipWorker(jobId: number, amount: number): Promise<{ message: string }> {
+    return request<{ message: string }>("/api/payments/tip", {
+      method: "POST",
+      body: { jobId, amount } as any,
+    });
+  },
+
   // Wallet
   async getWallet(): Promise<{ balance: number; escrow: number; transactions: Array<{ title: string; amount: number; partnerName: string; date: string; status: string }> }> {
     return request<any>("/api/wallet");

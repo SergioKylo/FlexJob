@@ -1,6 +1,8 @@
-import { Star, MapPin, Briefcase, User, Clock, Shield } from "lucide-react";
+import { useState } from "react";
+import { Star, MapPin, Briefcase, User, Clock, CheckCircle, CreditCard, Edit2 } from "lucide-react";
 import type { User as UserType } from "../types";
 import type { TranslationKey } from "../i18n/translations";
+import { api } from "../utils/api";
 
 type ProfilePageProps = {
   t: (key: TranslationKey) => string;
@@ -34,6 +36,31 @@ export function ProfilePage({ user }: ProfilePageProps) {
   const region = nearestRegion(user.lat, user.lng);
   const rating = user.rating ?? 5.0;
 
+  const [editRegion, setEditRegion] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState(region);
+  const [savingRegion, setSavingRegion] = useState(false);
+  const [regionSaved, setRegionSaved] = useState(false);
+
+  async function handleSaveRegion() {
+    const r = REGIONS.find((x) => x.name === selectedRegion) ?? REGIONS[0];
+    setSavingRegion(true);
+    try {
+      await api.updateAvailability({
+        lat: r.lat, lng: r.lng,
+        radius: 10,
+        startTime: "09:00", endTime: "18:00",
+        hourlyRate: 10, isActive: true,
+      });
+      setRegionSaved(true);
+      setEditRegion(false);
+      setTimeout(() => setRegionSaved(false), 3000);
+    } catch {
+      alert("Erro ao guardar região. Tente novamente.");
+    } finally {
+      setSavingRegion(false);
+    }
+  }
+
   const roleLabel  = isWorker ? "Trabalhador" : "Empreendedor";
   const roleColor  = isWorker ? "#10b981" : "#f59e0b";
   const roleBg     = isWorker ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)";
@@ -44,8 +71,8 @@ export function ProfilePage({ user }: ProfilePageProps) {
 
       {/* Profile card */}
       <div style={{
-        background: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(79,70,229,0.08))",
-        border: "1px solid rgba(99,102,241,0.2)",
+        background: "linear-gradient(135deg, rgba(99,102,241,0.12), rgba(79,70,229,0.06))",
+        border: "1px solid var(--line)",
         borderRadius: "20px",
         padding: "2rem",
         marginBottom: "1.5rem",
@@ -68,14 +95,14 @@ export function ProfilePage({ user }: ProfilePageProps) {
         {/* Info */}
         <div style={{ flex: 1, minWidth: "200px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
-            <h2 style={{ margin: 0, fontSize: "1.4rem", fontWeight: "700", color: "#fff" }}>{user.name}</h2>
+            <h2 style={{ margin: 0, fontSize: "1.4rem", fontWeight: "700", color: "var(--ink)" }}>{user.name}</h2>
             <span style={{ fontSize: "0.75rem", fontWeight: "700", padding: "0.2rem 0.6rem", borderRadius: "8px", background: roleBg, color: roleColor, border: `1px solid ${roleBorder}` }}>
               {roleLabel}
             </span>
           </div>
-          <p style={{ margin: "0 0 0.6rem", fontSize: "0.85rem", color: "rgba(255,255,255,0.5)" }}>{user.email}</p>
+          <p style={{ margin: "0 0 0.6rem", fontSize: "0.85rem", color: "var(--muted)" }}>{user.email}</p>
           <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", fontSize: "0.83rem" }}>
-            <span style={{ color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+            <span style={{ color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
               <MapPin size={13} style={{ color: "#6366f1" }} />
               {region}
             </span>
@@ -91,81 +118,128 @@ export function ProfilePage({ user }: ProfilePageProps) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
         {(isWorker
           ? [
-              { icon: <Briefcase size={18} />, label: "Tarefas concluídas", value: "24" },
-              { icon: <Clock size={18} />,     label: "Taxa de presença",    value: "98%" },
-              { icon: <Star size={18} />,      label: "Preço base",         value: "€11/h" },
+              { icon: <Briefcase size={18} />, label: "Tarefas concluídas", value: "–" },
+              { icon: <Clock size={18} />,     label: "Raio de ação",       value: "10 km" },
+              { icon: <CreditCard size={18} />,label: "Taxa de serviço",    value: "€0/h" },
             ]
           : [
-              { icon: <Briefcase size={18} />, label: "Vagas publicadas",   value: "8" },
-              { icon: <User size={18} />,      label: "Trabalhadores contratados", value: "31" },
-              { icon: <Star size={18} />,      label: "Avaliação dada",     value: "4.7 ★" },
+              { icon: <Briefcase size={18} />, label: "Vagas publicadas",         value: "–" },
+              { icon: <User size={18} />,      label: "Trabalhadores contratados", value: "–" },
+              { icon: <Star size={18} />,      label: "Avaliação dada",           value: `${rating.toFixed(1)} ★` },
             ]
         ).map((stat) => (
           <div
             key={stat.label}
-            style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "14px", padding: "1.1rem", textAlign: "center" }}
+            style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.1rem", textAlign: "center" }}
           >
             <div style={{ color: "#6366f1", display: "flex", justifyContent: "center", marginBottom: "0.5rem" }}>{stat.icon}</div>
-            <strong style={{ fontSize: "1.3rem", color: "#fff", display: "block" }}>{stat.value}</strong>
-            <small style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.4)", display: "block", marginTop: "0.2rem" }}>{stat.label}</small>
+            <strong style={{ fontSize: "1.3rem", color: "var(--ink)", display: "block" }}>{stat.value}</strong>
+            <small style={{ fontSize: "0.72rem", color: "var(--muted)", display: "block", marginTop: "0.2rem" }}>{stat.label}</small>
           </div>
         ))}
       </div>
 
       {/* Details section */}
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1.5rem" }}>
+        {/* Bio / About */}
+        <InfoCard title={isWorker ? "Sobre mim" : "Sobre a empresa"} icon={<User size={15} />}>
+          {user.bio && user.bio.trim()
+            ? user.bio
+            : isWorker
+              ? "Sem bio definida. Edite o seu perfil para adicionar uma descrição."
+              : `Empreendedor registado em ${region}. Utilize a FlexJob para encontrar trabalhadores disponíveis de forma rápida.`
+          }
+        </InfoCard>
+
         {isWorker ? (
           <>
-            <InfoCard title="Competências" icon={<Briefcase size={15} />}>
-              Eventos, restauração, logística e retalho.
-            </InfoCard>
             <InfoCard title="Disponibilidade" icon={<Clock size={15} />}>
-              Disponível para trabalhos de curta duração (dia ou semana) em {region}. Raio de ação: 10 km.
+              Disponível para trabalhos de curta duração. Raio de ação: 10 km a partir de {region}.
             </InfoCard>
+
+            {/* Change region */}
+            <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.1rem 1.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: editRegion ? "0.75rem" : 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <MapPin size={15} style={{ color: "#6366f1" }} />
+                  <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>Região de trabalho</h4>
+                </div>
+                <button
+                  onClick={() => setEditRegion((v) => !v)}
+                  style={{ display: "flex", alignItems: "center", gap: "0.3rem", background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontSize: "0.78rem", fontWeight: "600" }}
+                >
+                  <Edit2 size={12} />
+                  {editRegion ? "Cancelar" : "Mudar região"}
+                </button>
+              </div>
+              {!editRegion && (
+                <p style={{ margin: 0, fontSize: "0.88rem", color: "var(--ink)", lineHeight: "1.55" }}>
+                  {region} · Raio de ação: 10 km
+                </p>
+              )}
+              {editRegion && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  <select
+                    value={selectedRegion}
+                    onChange={(e) => setSelectedRegion(e.target.value)}
+                    style={{ padding: "0.5rem 0.75rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.9rem" }}
+                  >
+                    {REGIONS.map((r) => (
+                      <option key={r.name} value={r.name}>{r.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleSaveRegion}
+                    disabled={savingRegion}
+                    style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", fontWeight: "700", cursor: "pointer", fontSize: "0.85rem", opacity: savingRegion ? 0.6 : 1 }}
+                  >
+                    {savingRegion ? "A guardar..." : "Guardar região"}
+                  </button>
+                  {regionSaved && <p style={{ margin: 0, fontSize: "0.78rem", color: "#22c97a", fontWeight: "600" }}>✓ Região atualizada com sucesso!</p>}
+                </div>
+              )}
+            </div>
           </>
         ) : (
-          <>
-            <InfoCard title="Sobre a empresa / perfil" icon={<User size={15} />}>
-              {user.bio ?? `Empreendedor registado em ${region}. Utiliza a FlexJob para encontrar trabalhadores disponíveis de forma rápida e fiável.`}
-            </InfoCard>
-            <InfoCard title="Região de atuação" icon={<MapPin size={15} />}>
-              {region} · Publica vagas para trabalhos de curta duração, eventos e apoio pontual.
-            </InfoCard>
-          </>
+          <InfoCard title="Região de atuação" icon={<MapPin size={15} />}>
+            {region} · Publica vagas para trabalhos de curta duração, eventos e apoio pontual.
+          </InfoCard>
         )}
       </div>
 
-      {/* Trust checklist */}
-      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "14px", padding: "1.25rem 1.5rem" }}>
+      {/* Account status */}
+      <div style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.25rem 1.5rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-          <Shield size={16} style={{ color: "#6366f1" }} />
-          <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "700", color: "#fff" }}>Checklist de Confiança</h3>
+          <CheckCircle size={16} style={{ color: "#22c97a" }} />
+          <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "700", color: "var(--ink)" }}>Estado da Conta</h3>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
           {[
-            { label: "Identidade verificada",   done: true },
-            { label: "Conta criada na FlexJob", done: true },
-            { label: "Pagamentos protegidos",   done: true },
-            { label: "Avaliações mútuas",       done: true },
-            { label: "Recibos / faturas",       done: false },
-            { label: "Seguro de acidentes",     done: false },
+            { label: "Conta ativa na FlexJob",     done: true,  note: null },
+            { label: "Pagamentos com garantia",     done: true,  note: "O dinheiro fica retido até confirmação" },
+            { label: "Avaliações em tempo real",    done: true,  note: null },
+            { label: "Perfil público",              done: !!(user.bio && user.bio.trim()), note: user.bio?.trim() ? null : "Adicione uma bio para se destacar" },
           ].map((item) => (
-            <label key={item.label} style={{ display: "flex", alignItems: "center", gap: "0.6rem", cursor: "default" }}>
+            <div key={item.label} style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
               <span style={{
-                width: "18px", height: "18px", borderRadius: "5px", flexShrink: 0,
-                background: item.done ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.04)",
-                border: item.done ? "1px solid rgba(16,185,129,0.4)" : "1px solid rgba(255,255,255,0.1)",
+                width: "18px", height: "18px", borderRadius: "5px", flexShrink: 0, marginTop: "1px",
+                background: item.done ? "rgba(34,201,122,0.15)" : "var(--surface)",
+                border: item.done ? "1px solid rgba(34,201,122,0.35)" : "1px solid var(--line)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                color: item.done ? "#10b981" : "rgba(255,255,255,0.2)",
+                color: item.done ? "#22c97a" : "var(--muted)",
                 fontSize: "0.7rem",
               }}>
-                {item.done ? "✓" : ""}
+                {item.done ? "✓" : "○"}
               </span>
-              <span style={{ fontSize: "0.85rem", color: item.done ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.35)" }}>
-                {item.label}
-                {!item.done && <span style={{ fontSize: "0.72rem", marginLeft: "0.4rem", color: "rgba(255,255,255,0.25)" }}>(em breve)</span>}
-              </span>
-            </label>
+              <div>
+                <span style={{ fontSize: "0.85rem", color: item.done ? "var(--ink)" : "var(--muted)", fontWeight: item.done ? "500" : "400" }}>
+                  {item.label}
+                </span>
+                {item.note && (
+                  <p style={{ margin: "0.1rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>{item.note}</p>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       </div>
@@ -175,12 +249,12 @@ export function ProfilePage({ user }: ProfilePageProps) {
 
 function InfoCard({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "14px", padding: "1.1rem 1.25rem" }}>
+    <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.1rem 1.25rem" }}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem" }}>
         <span style={{ color: "#6366f1" }}>{icon}</span>
-        <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "rgba(255,255,255,0.4)" }}>{title}</h4>
+        <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>{title}</h4>
       </div>
-      <p style={{ margin: 0, fontSize: "0.88rem", color: "rgba(255,255,255,0.75)", lineHeight: "1.55" }}>{children}</p>
+      <p style={{ margin: 0, fontSize: "0.88rem", color: "var(--ink)", lineHeight: "1.55" }}>{children}</p>
     </div>
   );
 }
