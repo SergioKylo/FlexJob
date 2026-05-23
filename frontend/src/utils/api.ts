@@ -211,6 +211,25 @@ export const api = {
       body: { toUserId, content, jobId } as any,
     });
   },
+
+  // Jobs detail
+  async getJobDetail(jobId: number): Promise<{ id: number; title: string; pay: number; duration: string; status: string; paymentStatus: string; employerId: number; employerName: string; workerId?: number; workerName?: string }> {
+    return request<any>(`/api/jobs/detail?jobId=${jobId}`);
+  },
+
+  // Payments
+  async escrowPayment(jobId: number): Promise<{ message: string; amount: number }> {
+    return request<any>("/api/payments/escrow", { method: "POST", body: { jobId } as any });
+  },
+
+  async releasePayment(jobId: number, rating: number, comment: string): Promise<{ message: string; amount: number }> {
+    return request<any>("/api/payments/release", { method: "POST", body: { jobId, rating, comment } as any });
+  },
+
+  // Wallet
+  async getWallet(): Promise<{ balance: number; escrow: number; transactions: Array<{ title: string; amount: number; partnerName: string; date: string; status: string }> }> {
+    return request<any>("/api/wallet");
+  },
 };
 
 // Distance Helper

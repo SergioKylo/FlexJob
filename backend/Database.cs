@@ -54,6 +54,7 @@ public static class Database
                         avatar VARCHAR(500),
                         bio TEXT,
                         rating DOUBLE DEFAULT 5.0,
+                        wallet_balance DOUBLE DEFAULT 0,
                         location_lat DOUBLE,
                         location_lng DOUBLE,
                         created_at VARCHAR(100) NOT NULL
@@ -74,6 +75,7 @@ public static class Database
                         pay_type VARCHAR(50) NOT NULL, /* hourly, fixed */
                         duration VARCHAR(100),
                         status VARCHAR(50) NOT NULL, /* open, accepted, completed */
+                        payment_status VARCHAR(50) NOT NULL DEFAULT 'none', /* none, escrowed, released */
                         employer_id INT NOT NULL,
                         worker_id INT,
                         photo LONGTEXT, /* Base64 string for job photo */
@@ -121,6 +123,7 @@ public static class Database
                         to_user_id INT NOT NULL,
                         job_id INT,
                         content TEXT NOT NULL,
+                        message_type VARCHAR(50) NOT NULL DEFAULT 'text', /* text, application, payment_escrow, payment_released */
                         created_at VARCHAR(100) NOT NULL,
                         FOREIGN KEY (from_user_id) REFERENCES users(id),
                         FOREIGN KEY (to_user_id) REFERENCES users(id),
@@ -150,6 +153,11 @@ public static class Database
                 throw;
             }
         }
+
+        // Schema migrations — safe to fail if columns already exist
+        try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN wallet_balance DOUBLE NOT NULL DEFAULT 0"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_status VARCHAR(50) NOT NULL DEFAULT 'none'"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE messages ADD COLUMN message_type VARCHAR(50) NOT NULL DEFAULT 'text'"); } catch { }
 
         // Seed mock data if database is empty
         try

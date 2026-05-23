@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
@@ -404,8 +405,6 @@ webApp.MapPost("/api/jobs/apply", (HttpContext context, ApplyRequest request) =>
     var createdAt = DateTime.UtcNow.ToString("o");
     try
     {
-        // For FlexJob, the employer needs to see applications. In an immediate model, we can assign or save application.
-        // Let's create an application record first.
         Database.ExecuteNonQuery(
             @"INSERT IGNORE INTO applications (job_id, worker_id, status, created_at)
               VALUES (@jobId, @workerId, 'pending', @createdAt)",
@@ -416,8 +415,25 @@ webApp.MapPost("/api/jobs/apply", (HttpContext context, ApplyRequest request) =>
                 { "@createdAt", createdAt }
             });
 
-        // Auto-match/auto-assign for instant matching if employer accepts it
-        return Results.Ok(new { message = "Candidatura enviada com sucesso!" });
+        // Send application notification to employer
+        var employerId = Convert.ToInt32(job["employer_id"]);
+        var workerRows = Database.ExecuteQuery("SELECT name FROM users WHERE id = @id", new() { { "@id", userId } });
+        var workerName = workerRows.Count > 0 ? workerRows[0]["name"]?.ToString() : "Trabalhador";
+        var jobTitle = job["title"]?.ToString();
+
+        Database.ExecuteNonQuery(
+            @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
+              VALUES (@from, @to, @jobId, @content, 'application', @createdAt2)",
+            new()
+            {
+                { "@from", userId },
+                { "@to", employerId },
+                { "@jobId", request.JobId },
+                { "@content", $"📋 {workerName} candidatou-se à sua vaga \"{jobTitle}\". Clique para ver o perfil e responder." },
+                { "@createdAt2", DateTime.UtcNow.ToString("o") }
+            });
+
+        return Results.Ok(new { message = "Candidatura enviada com sucesso!", employerId });
     }
     catch (Exception ex)
     {
@@ -744,6 +760,7 @@ webApp.MapGet("/api/messages", (HttpContext context, int partnerId, int? jobId) 
             fromName = m["from_name"]?.ToString(),
             toName = m["to_name"]?.ToString(),
             content = m["content"]?.ToString(),
+            messageType = m.ContainsKey("message_type") ? m["message_type"]?.ToString() ?? "text" : "text",
             createdAt = m["created_at"]?.ToString()
         });
     }
@@ -777,6 +794,199 @@ webApp.MapPost("/api/messages", (HttpContext context, MessageRequest request) =>
     return Results.Ok(new { message = "Mensagem enviada." });
 });
 
+// --- Job Detail Endpoint ---
+
+webApp.MapGet("/api/jobs/detail", (HttpContext context, int jobId) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+
+    var jobs = Database.ExecuteQuery(
+        @"SELECT j.*, e.name as employer_name, w.name as worker_name
+          FROM jobs j
+          JOIN users e ON j.employer_id = e.id
+          LEFT JOIN users w ON j.worker_id = w.id
+          WHERE j.id = @jobId",
+        new() { { "@jobId", jobId } });
+
+    if (jobs.Count == 0) return Results.NotFound(new { message = "Trabalho não encontrado." });
+    var job = jobs[0];
+
+    return Results.Ok(new
+    {
+        id = Convert.ToInt32(job["id"]),
+        title = job["title"]?.ToString(),
+        pay = Convert.ToDouble(job["pay"]),
+        duration = job["duration"]?.ToString(),
+        status = job["status"]?.ToString(),
+        paymentStatus = job.ContainsKey("payment_status") ? job["payment_status"]?.ToString() ?? "none" : "none",
+        employerId = Convert.ToInt32(job["employer_id"]),
+        employerName = job["employer_name"]?.ToString(),
+        workerId = job["worker_id"] != null && job["worker_id"] != DBNull.Value ? Convert.ToInt32(job["worker_id"]) : (int?)null,
+        workerName = job["worker_name"]?.ToString(),
+    });
+});
+
+// --- Payment Endpoints ---
+
+webApp.MapPost("/api/payments/escrow", (HttpContext context, EscrowRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+
+    if (role != "employer")
+        return Results.Json(new { message = "Apenas empreendedores podem efetuar pagamentos." }, statusCode: 403);
+
+    var jobs = Database.ExecuteQuery("SELECT * FROM jobs WHERE id = @jobId", new() { { "@jobId", request.JobId } });
+    if (jobs.Count == 0) return Results.NotFound(new { message = "Trabalho não encontrado." });
+    var job = jobs[0];
+
+    if (Convert.ToInt32(job["employer_id"]) != userId)
+        return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
+
+    var paymentStatus = job.ContainsKey("payment_status") ? job["payment_status"]?.ToString() ?? "none" : "none";
+    if (paymentStatus != "none")
+        return Results.BadRequest(new { message = "Pagamento já foi efetuado para esta tarefa." });
+
+    var workerId = job["worker_id"] != null && job["worker_id"] != DBNull.Value ? Convert.ToInt32(job["worker_id"]) : (int?)null;
+    if (workerId == null)
+        return Results.BadRequest(new { message = "Ainda não há trabalhador atribuído. Aceite primeiro uma candidatura." });
+
+    var pay = Convert.ToDouble(job["pay"]);
+
+    Database.ExecuteNonQuery("UPDATE jobs SET payment_status = 'escrowed' WHERE id = @jobId", new() { { "@jobId", request.JobId } });
+
+    Database.ExecuteNonQuery(
+        @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
+          VALUES (@from, @to, @jobId, @content, 'payment_escrow', @createdAt)",
+        new()
+        {
+            { "@from", userId },
+            { "@to", workerId },
+            { "@jobId", request.JobId },
+            { "@content", $"💰 Pagamento de €{pay:F2} depositado em garantia. Pode iniciar o trabalho!" },
+            { "@createdAt", DateTime.UtcNow.ToString("o") }
+        });
+
+    return Results.Ok(new { message = "Pagamento depositado em garantia com sucesso!", amount = pay });
+});
+
+webApp.MapPost("/api/payments/release", (HttpContext context, ReleasePaymentRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+
+    if (role != "employer")
+        return Results.Json(new { message = "Apenas empreendedores podem confirmar a conclusão." }, statusCode: 403);
+
+    var jobs = Database.ExecuteQuery("SELECT * FROM jobs WHERE id = @jobId", new() { { "@jobId", request.JobId } });
+    if (jobs.Count == 0) return Results.NotFound(new { message = "Trabalho não encontrado." });
+    var job = jobs[0];
+
+    if (Convert.ToInt32(job["employer_id"]) != userId)
+        return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
+
+    var paymentStatus = job.ContainsKey("payment_status") ? job["payment_status"]?.ToString() ?? "none" : "none";
+    if (paymentStatus != "escrowed")
+        return Results.BadRequest(new { message = "O pagamento em garantia ainda não foi efetuado." });
+
+    var workerId = Convert.ToInt32(job["worker_id"]);
+    var pay = Convert.ToDouble(job["pay"]);
+
+    Database.ExecuteNonQuery(
+        "UPDATE jobs SET status = 'completed', payment_status = 'released' WHERE id = @jobId",
+        new() { { "@jobId", request.JobId } });
+
+    Database.ExecuteNonQuery(
+        "UPDATE users SET wallet_balance = wallet_balance + @amount WHERE id = @workerId",
+        new() { { "@amount", pay }, { "@workerId", workerId } });
+
+    if (request.Rating > 0)
+    {
+        var now2 = DateTime.UtcNow.ToString("o");
+        Database.ExecuteNonQuery(
+            @"INSERT INTO reviews (job_id, from_user_id, to_user_id, rating, comment, created_at)
+              VALUES (@jobId, @from, @to, @rating, @comment, @createdAt)",
+            new()
+            {
+                { "@jobId", request.JobId },
+                { "@from", userId },
+                { "@to", workerId },
+                { "@rating", Math.Clamp(request.Rating, 1.0, 5.0) },
+                { "@comment", request.Comment ?? "" },
+                { "@createdAt", now2 }
+            });
+
+        var ratings = Database.ExecuteQuery("SELECT AVG(rating) as avg_rating FROM reviews WHERE to_user_id = @workerId", new() { { "@workerId", workerId } });
+        if (ratings.Count > 0 && ratings[0]["avg_rating"] != null && ratings[0]["avg_rating"] != DBNull.Value)
+        {
+            double avg = Convert.ToDouble(ratings[0]["avg_rating"]);
+            Database.ExecuteNonQuery("UPDATE users SET rating = @rating WHERE id = @workerId", new() { { "@rating", avg }, { "@workerId", workerId } });
+        }
+    }
+
+    Database.ExecuteNonQuery(
+        @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
+          VALUES (@from, @to, @jobId, @content, 'payment_released', @createdAt)",
+        new()
+        {
+            { "@from", userId },
+            { "@to", workerId },
+            { "@jobId", request.JobId },
+            { "@content", $"🎉 Trabalho concluído! €{pay:F2} creditados na sua carteira." },
+            { "@createdAt", DateTime.UtcNow.ToString("o") }
+        });
+
+    return Results.Ok(new { message = "Pagamento libertado e trabalho concluído!", amount = pay });
+});
+
+// --- Wallet Endpoint ---
+
+webApp.MapGet("/api/wallet", (HttpContext context) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+
+    var users = Database.ExecuteQuery("SELECT wallet_balance FROM users WHERE id = @id", new() { { "@id", userId } });
+    var balance = users.Count > 0 ? Convert.ToDouble(users[0]["wallet_balance"]) : 0.0;
+
+    // Escrow = jobs accepted+escrowed (pending payout for worker, pending confirmation for employer)
+    double escrow = 0;
+    if (role == "worker")
+    {
+        var escrowed = Database.ExecuteQuery(
+            "SELECT SUM(pay) as total FROM jobs WHERE worker_id = @id AND payment_status = 'escrowed'",
+            new() { { "@id", userId } });
+        escrow = escrowed.Count > 0 && escrowed[0]["total"] != null && escrowed[0]["total"] != DBNull.Value
+            ? Convert.ToDouble(escrowed[0]["total"]) : 0;
+    }
+
+    // Transaction history
+    string txQuery = role == "worker"
+        ? @"SELECT j.title, j.pay, j.payment_status, j.created_at, e.name as partner_name
+            FROM jobs j JOIN users e ON j.employer_id = e.id
+            WHERE j.worker_id = @id AND j.payment_status IN ('escrowed','released')
+            ORDER BY j.created_at DESC LIMIT 20"
+        : @"SELECT j.title, j.pay, j.payment_status, j.created_at, w.name as partner_name
+            FROM jobs j LEFT JOIN users w ON j.worker_id = w.id
+            WHERE j.employer_id = @id AND j.payment_status IN ('escrowed','released')
+            ORDER BY j.created_at DESC LIMIT 20";
+
+    var txRows = Database.ExecuteQuery(txQuery, new() { { "@id", userId } });
+    var transactions = txRows.Select(t => new
+    {
+        title = t["title"]?.ToString(),
+        amount = Convert.ToDouble(t["pay"]),
+        partnerName = t["partner_name"]?.ToString(),
+        date = t["created_at"]?.ToString(),
+        status = t["payment_status"]?.ToString()
+    }).ToList();
+
+    return Results.Ok(new { balance, escrow, transactions });
+});
+
 webApp.Run();
 
 // --- Request records ---
@@ -789,6 +999,8 @@ public record AvailabilityRequest(double Lat, double Lng, double Radius, string 
 public record MessageRequest(int ToUserId, int? JobId, string Content);
 public record ProfileUpdateRequest(string Name, string Bio);
 public record CompleteJobRequest(int JobId, double Rating, string Comment);
+public record EscrowRequest(int JobId);
+public record ReleasePaymentRequest(int JobId, double Rating, string Comment);
 
 // --- Geospatial helpers ---
 public static class GeoHelper

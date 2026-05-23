@@ -120,13 +120,18 @@ export function App() {
     try {
       if (user.role === "worker") {
         await api.applyToJob(item.id);
-        alert("Candidatura enviada com sucesso!");
         const data = await api.getMyJobs();
         setMatches(data.map((j) => ({
           id: j.id, itemId: j.id, mode: "work" as WorkMode,
           title: j.title, city: j.address || "Local", pay: j.pay,
           createdAt: new Date(j.createdAt).toLocaleDateString(),
         })));
+        // Auto-open chat with employer after applying
+        const employerId = item.employerId ?? 0;
+        if (employerId > 0) {
+          openChat(employerId, item.requester, undefined, item.id);
+          setView("messages");
+        }
       } else {
         // Employer invites a worker → open chat
         openChat(item.id, item.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${item.title}`);

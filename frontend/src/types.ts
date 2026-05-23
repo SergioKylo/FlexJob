@@ -18,6 +18,7 @@ export type User = {
   avatar?: string;
   bio?: string;
   rating?: number;
+  walletBalance?: number;
   lat?: number;
   lng?: number;
 };
@@ -67,6 +68,7 @@ export type ChatMessage = {
   fromName: string;
   toName: string;
   content: string;
+  messageType?: string;
   createdAt: string;
 };
 

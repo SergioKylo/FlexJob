@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, ArrowLeft, Briefcase, Clock } from "lucide-react";
+import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star } from "lucide-react";
 import { api } from "../utils/api";
 import type { ChatMessage, InboxConversation, User } from "../types";
+
+type JobDetail = {
+  id: number;
+  title: string;
+  pay: number;
+  duration: string;
+  status: string;
+  paymentStatus: string;
+  employerId: number;
+  employerName: string;
+  workerId?: number;
+  workerName?: string;
+};
 
 type MessagesPageProps = {
   user: User;
@@ -25,6 +38,11 @@ export function MessagesPage({
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [inputText, setInputText] = useState("");
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [jobDetail, setJobDetail] = useState<JobDetail | null>(null);
+  const [showRatingForm, setShowRatingForm] = useState(false);
+  const [rating, setRating] = useState(5);
+  const [ratingComment, setRatingComment] = useState("");
+  const [paymentLoading, setPaymentLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,7 +51,7 @@ export function MessagesPage({
     return () => window.removeEventListener("resize", handler);
   }, []);
 
-  // Load inbox on mount; refresh every 5s
+  // Load inbox; refresh every 5s
   useEffect(() => {
     let active = true;
     async function fetchInbox() {
@@ -42,7 +60,6 @@ export function MessagesPage({
         if (!active) return;
         setConversations(data);
         setLoadingInbox(false);
-        // If we were given an initial chat partner, auto-select them
         if (initialPartnerId && !selectedConv) {
           const existing = data.find(
             (c) => c.partnerId === initialPartnerId && (initialJobId ? c.jobId === initialJobId : true)
@@ -50,7 +67,6 @@ export function MessagesPage({
           if (existing) {
             setSelectedConv(existing);
           } else if (initialPartnerName) {
-            // Synthetic conversation for a brand-new chat
             setSelectedConv({
               partnerId: initialPartnerId,
               partnerName: initialPartnerName,
@@ -72,7 +88,7 @@ export function MessagesPage({
     return () => { active = false; clearInterval(interval); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load messages when active conversation changes
+  // Load messages when conversation changes
   useEffect(() => {
     if (!selectedConv) { setMessages([]); return; }
     let active = true;
@@ -91,6 +107,17 @@ export function MessagesPage({
     const interval = setInterval(fetchMessages, 3000);
     return () => { active = false; clearInterval(interval); };
   }, [selectedConv?.partnerId, selectedConv?.jobId]);
+
+  // Fetch job details when a job conversation is selected
+  useEffect(() => {
+    setJobDetail(null);
+    setShowRatingForm(false);
+    if (selectedConv && selectedConv.jobId > 0) {
+      api.getJobDetail(selectedConv.jobId)
+        .then(setJobDetail)
+        .catch(() => setJobDetail(null));
+    }
+  }, [selectedConv?.jobId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -111,6 +138,41 @@ export function MessagesPage({
     }
   }
 
+  async function handleEscrow() {
+    if (!jobDetail) return;
+    setPaymentLoading(true);
+    try {
+      await api.escrowPayment(jobDetail.id);
+      const updated = await api.getJobDetail(jobDetail.id);
+      setJobDetail(updated);
+      const jobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
+      const data = await api.getMessages(selectedConv!.partnerId, jobId);
+      setMessages(data);
+    } catch (err: any) {
+      alert(err.message || "Erro ao efetuar pagamento.");
+    } finally {
+      setPaymentLoading(false);
+    }
+  }
+
+  async function handleRelease() {
+    if (!jobDetail) return;
+    setPaymentLoading(true);
+    try {
+      await api.releasePayment(jobDetail.id, rating, ratingComment);
+      const updated = await api.getJobDetail(jobDetail.id);
+      setJobDetail(updated);
+      setShowRatingForm(false);
+      const jobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
+      const data = await api.getMessages(selectedConv!.partnerId, jobId);
+      setMessages(data);
+    } catch (err: any) {
+      alert(err.message || "Erro ao confirmar trabalho.");
+    } finally {
+      setPaymentLoading(false);
+    }
+  }
+
   function getInitials(name: string) {
     return name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
   }
@@ -127,38 +189,33 @@ export function MessagesPage({
   const showList = !isMobile || !selectedConv;
   const showChat = !isMobile || !!selectedConv;
 
-  const PANEL_HEIGHT = "calc(100dvh - 140px)";
+  const isEmployer = user.role === "employer";
+
+  // Determine payment bar state
+  const canPay = isEmployer && jobDetail && jobDetail.workerId && jobDetail.paymentStatus === "none" && jobDetail.status === "accepted";
+  const awaitingConfirmation = isEmployer && jobDetail && jobDetail.paymentStatus === "escrowed";
+  const workerEscrow = !isEmployer && jobDetail && jobDetail.paymentStatus === "escrowed";
+  const jobDone = jobDetail && jobDetail.paymentStatus === "released";
+  const showPaymentBar = !!(canPay || awaitingConfirmation || workerEscrow || jobDone);
 
   return (
-    <div style={{ display: "flex", height: PANEL_HEIGHT, overflow: "hidden" }}>
+    <div className="msg-shell">
 
       {/* ── Conversation list ── */}
       {showList && (
-        <div style={{
-          width: isMobile ? "100%" : "320px",
-          flexShrink: 0,
-          borderRight: isMobile ? "none" : "1px solid rgba(255,255,255,0.08)",
-          display: "flex",
-          flexDirection: "column",
-          background: "rgba(255,255,255,0.01)",
-          height: "100%",
-        }}>
-          <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-            <h2 style={{ margin: 0, fontSize: "1.2rem", fontWeight: "700", color: "#fff" }}>Mensagens</h2>
-            <p style={{ margin: "0.2rem 0 0", fontSize: "0.78rem", color: "rgba(255,255,255,0.4)" }}>
-              {conversations.length} conversa{conversations.length !== 1 ? "s" : ""}
-            </p>
+        <div className="msg-sidebar" style={{ width: isMobile ? "100%" : undefined }}>
+          <div className="msg-sidebar-head">
+            <h2>Mensagens</h2>
+            <p>{conversations.length} conversa{conversations.length !== 1 ? "s" : ""}</p>
           </div>
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {loadingInbox ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "rgba(255,255,255,0.35)" }}>
-                A carregar...
-              </div>
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>A carregar...</div>
             ) : conversations.length === 0 ? (
               <div style={{ padding: "3rem 1.5rem", textAlign: "center" }}>
-                <MessageSquare size={40} style={{ color: "rgba(255,255,255,0.12)", marginBottom: "1rem" }} />
-                <p style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.87rem", lineHeight: "1.55", margin: 0 }}>
+                <MessageSquare size={40} style={{ color: "var(--line)", marginBottom: "1rem", display: "block", margin: "0 auto 1rem" }} />
+                <p style={{ color: "var(--muted)", fontSize: "0.87rem", lineHeight: "1.55", margin: 0 }}>
                   Ainda não tem conversas.<br />
                   Candidate-se a vagas ou contacte trabalhadores para começar.
                 </p>
@@ -172,30 +229,12 @@ export function MessagesPage({
                   <button
                     key={`${conv.partnerId}-${conv.jobId}`}
                     onClick={() => setSelectedConv(conv)}
-                    style={{
-                      display: "flex",
-                      gap: "0.75rem",
-                      alignItems: "center",
-                      width: "100%",
-                      padding: "0.9rem 1.25rem",
-                      background: isActive ? "rgba(99,102,241,0.12)" : "transparent",
-                      borderLeft: isActive ? "3px solid #6366f1" : "3px solid transparent",
-                      border: "none",
-                      borderBottom: "1px solid rgba(255,255,255,0.05)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "background 0.12s",
-                    }}
-                    onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}
-                    onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
+                    className={`msg-conv-btn ${isActive ? "active" : ""}`}
                   >
                     <div style={{ position: "relative", flexShrink: 0 }}>
                       {conv.partnerAvatar ? (
-                        <img
-                          src={conv.partnerAvatar}
-                          alt={conv.partnerName}
-                          style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover" }}
-                        />
+                        <img src={conv.partnerAvatar} alt={conv.partnerName}
+                          style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover" }} />
                       ) : (
                         <div style={{
                           width: "42px", height: "42px", borderRadius: "50%",
@@ -209,28 +248,28 @@ export function MessagesPage({
                       <span style={{
                         position: "absolute", bottom: "1px", right: "1px",
                         width: "9px", height: "9px", background: "#10b981",
-                        borderRadius: "50%", border: "2px solid #0f0f0f",
+                        borderRadius: "50%", border: "2px solid var(--surface)",
                       }} />
                     </div>
 
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.1rem" }}>
-                        <span style={{ fontWeight: "600", color: "#fff", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: "600", color: "var(--ink)", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {conv.partnerName}
                         </span>
-                        <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)", flexShrink: 0, marginLeft: "0.5rem" }}>
+                        <span style={{ fontSize: "0.7rem", color: "var(--muted)", flexShrink: 0, marginLeft: "0.5rem" }}>
                           {formatTime(conv.lastMessageTime)}
                         </span>
                       </div>
                       {conv.jobTitle && (
                         <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginBottom: "0.15rem" }}>
                           <Briefcase size={9} style={{ color: "#6366f1", flexShrink: 0 }} />
-                          <span style={{ fontSize: "0.7rem", color: "#a5b4fc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <span style={{ fontSize: "0.7rem", color: "#6366f1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {conv.jobTitle}
                           </span>
                         </div>
                       )}
-                      <p style={{ margin: 0, fontSize: "0.78rem", color: "rgba(255,255,255,0.4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {conv.lastMessage || "Iniciar conversa..."}
                       </p>
                     </div>
@@ -244,21 +283,14 @@ export function MessagesPage({
 
       {/* ── Chat panel ── */}
       {showChat && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, height: "100%" }}>
+        <div className="msg-chat-panel">
           {selectedConv ? (
             <>
               {/* Chat header */}
-              <div style={{
-                padding: "0.9rem 1.25rem",
-                borderBottom: "1px solid rgba(255,255,255,0.08)",
-                display: "flex", alignItems: "center", gap: "0.75rem",
-                background: "rgba(255,255,255,0.02)", flexShrink: 0,
-              }}>
+              <div className="msg-chat-header">
                 {isMobile && (
-                  <button
-                    onClick={() => setSelectedConv(null)}
-                    style={{ background: "none", border: "none", color: "rgba(255,255,255,0.5)", cursor: "pointer", padding: "0.25rem", display: "flex", alignItems: "center" }}
-                  >
+                  <button onClick={() => setSelectedConv(null)}
+                    style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", padding: "0.25rem", display: "flex" }}>
                     <ArrowLeft size={18} />
                   </button>
                 )}
@@ -271,18 +303,18 @@ export function MessagesPage({
                   {getInitials(selectedConv.partnerName)}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: 0, fontSize: "0.92rem", fontWeight: "700", color: "#fff" }}>
+                  <h3 style={{ margin: 0, fontSize: "0.92rem", fontWeight: "700", color: "var(--ink)" }}>
                     {selectedConv.partnerName}
                   </h3>
                   {selectedConv.jobTitle && (
-                    <p style={{ margin: 0, fontSize: "0.72rem", color: "#a5b4fc", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                    <p style={{ margin: 0, fontSize: "0.72rem", color: "#6366f1", display: "flex", alignItems: "center", gap: "0.25rem" }}>
                       <Briefcase size={9} />
                       {selectedConv.jobTitle}
                     </p>
                   )}
                 </div>
                 {selectedConv.partnerRole && (
-                  <span style={{ fontSize: "0.7rem", color: "rgba(255,255,255,0.3)", display: "flex", alignItems: "center", gap: "0.25rem", flexShrink: 0 }}>
+                  <span style={{ fontSize: "0.7rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.25rem", flexShrink: 0 }}>
                     <Clock size={10} />
                     {selectedConv.partnerRole}
                   </span>
@@ -290,78 +322,123 @@ export function MessagesPage({
               </div>
 
               {/* Messages area */}
-              <div style={{
-                flex: 1, overflowY: "auto", padding: "1.25rem 1.5rem",
-                display: "flex", flexDirection: "column", gap: "0.6rem",
-                background: "rgba(255,255,255,0.005)",
-              }}>
+              <div className="msg-chat-area">
                 {loadingMessages && messages.length === 0 ? (
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.3)" }}>
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
                     A carregar mensagens...
                   </div>
                 ) : messages.length === 0 ? (
-                  <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.25)", textAlign: "center", gap: "0.75rem", padding: "2rem" }}>
-                    <MessageSquare size={44} style={{ opacity: 0.2 }} />
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--muted)", textAlign: "center", gap: "0.75rem", padding: "2rem" }}>
+                    <MessageSquare size={44} style={{ opacity: 0.25 }} />
                     <p style={{ margin: 0, fontSize: "0.9rem" }}>
                       Inicie a conversa com {selectedConv.partnerName}!
                     </p>
                   </div>
                 ) : (
-                  messages.map((msg) => {
-                    const isMe = msg.fromUserId === user.id;
-                    return (
-                      <div key={msg.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
-                        <div style={{
-                          maxWidth: "72%",
-                          padding: "0.7rem 1rem",
-                          borderRadius: isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
-                          background: isMe ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "rgba(255,255,255,0.07)",
-                          border: isMe ? "none" : "1px solid rgba(255,255,255,0.1)",
-                          color: "#fff",
-                        }}>
-                          <p style={{ margin: 0, fontSize: "0.88rem", lineHeight: "1.45", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
-                            {msg.content}
-                          </p>
-                          <span style={{ display: "block", fontSize: "0.67rem", marginTop: "0.3rem", opacity: 0.55, textAlign: "right" }}>
-                            {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
+                  messages.map((msg) => <MessageBubble key={msg.id} msg={msg} userId={user.id ?? 0} />)
                 )}
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* ── Payment action bar ── */}
+              {showPaymentBar && (
+                <div className="msg-payment-bar">
+                  {jobDone && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(34,201,122,0.1)", border: "1px solid rgba(34,201,122,0.25)", color: "var(--green)" }}>
+                      <CheckCircle size={16} />
+                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>Trabalho concluído · €{jobDetail!.pay.toFixed(2)} pagos</span>
+                    </div>
+                  )}
+
+                  {workerEscrow && !jobDone && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(255,210,51,0.1)", border: "1px solid rgba(255,210,51,0.25)", color: "var(--yellow-dark)" }}>
+                      <Lock size={16} />
+                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>€{jobDetail!.pay.toFixed(2)} em garantia · Pode iniciar o trabalho!</span>
+                    </div>
+                  )}
+
+                  {canPay && !awaitingConfirmation && !jobDone && (
+                    <button
+                      onClick={handleEscrow}
+                      disabled={paymentLoading}
+                      style={{
+                        width: "100%", padding: "0.6rem 1rem", borderRadius: "10px", border: "none",
+                        background: "linear-gradient(135deg, #22c97a, #16a361)", color: "#fff",
+                        fontWeight: "700", fontSize: "0.88rem", cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
+                        opacity: paymentLoading ? 0.6 : 1,
+                      }}
+                    >
+                      <Lock size={15} />
+                      {paymentLoading ? "A processar..." : `Depositar €${jobDetail!.pay.toFixed(2)} em Garantia`}
+                    </button>
+                  )}
+
+                  {awaitingConfirmation && !jobDone && !showRatingForm && (
+                    <button
+                      onClick={() => setShowRatingForm(true)}
+                      style={{
+                        width: "100%", padding: "0.6rem 1rem", borderRadius: "10px", border: "none",
+                        background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff",
+                        fontWeight: "700", fontSize: "0.88rem", cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
+                      }}
+                    >
+                      <CheckCircle size={15} />
+                      Confirmar Trabalho Concluído · Pagar €{jobDetail!.pay.toFixed(2)}
+                    </button>
+                  )}
+
+                  {showRatingForm && !jobDone && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                      <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
+                        {[1, 2, 3, 4, 5].map((s) => (
+                          <button key={s} onClick={() => setRating(s)}
+                            style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", opacity: s <= rating ? 1 : 0.3 }}>
+                            <Star size={22} fill={s <= rating ? "#ffd233" : "none"} color="#ffd233" />
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="text"
+                        className="msg-input"
+                        placeholder="Comentário (opcional)..."
+                        value={ratingComment}
+                        onChange={(e) => setRatingComment(e.target.value)}
+                        style={{ width: "100%", boxSizing: "border-box" }}
+                      />
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button onClick={() => setShowRatingForm(false)}
+                          style={{ flex: 1, padding: "0.55rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", cursor: "pointer", fontWeight: "600" }}>
+                          Cancelar
+                        </button>
+                        <button onClick={handleRelease} disabled={paymentLoading}
+                          style={{ flex: 2, padding: "0.55rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", cursor: "pointer", fontWeight: "700", opacity: paymentLoading ? 0.6 : 1 }}>
+                          {paymentLoading ? "A confirmar..." : "Confirmar e Pagar"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Input */}
-              <form
-                onSubmit={handleSend}
-                style={{
-                  padding: "0.9rem 1.25rem",
-                  borderTop: "1px solid rgba(255,255,255,0.08)",
-                  display: "flex", gap: "0.6rem",
-                  background: "rgba(255,255,255,0.02)", flexShrink: 0,
-                }}
-              >
+              <form onSubmit={handleSend} className="msg-input-row">
                 <input
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
                   placeholder={`Mensagem para ${selectedConv.partnerName}...`}
-                  style={{
-                    flex: 1, padding: "0.7rem 1rem",
-                    borderRadius: "12px", border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)", color: "#fff",
-                    fontSize: "0.88rem", outline: "none",
-                  }}
+                  className="msg-input"
                 />
                 <button
                   type="submit"
                   disabled={!inputText.trim()}
                   style={{
                     width: "42px", height: "42px", borderRadius: "12px", border: "none",
-                    background: inputText.trim() ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "rgba(255,255,255,0.07)",
-                    color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                    background: inputText.trim() ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "var(--surface2)",
+                    color: inputText.trim() ? "#fff" : "var(--muted)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
                     cursor: inputText.trim() ? "pointer" : "not-allowed", flexShrink: 0,
                     transition: "background 0.15s",
                   }}
@@ -371,18 +448,11 @@ export function MessagesPage({
               </form>
             </>
           ) : (
-            /* No conversation selected — desktop empty state */
-            <div style={{
-              flex: 1, display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center",
-              color: "rgba(255,255,255,0.25)", textAlign: "center", gap: "1rem",
-            }}>
-              <MessageSquare size={56} style={{ opacity: 0.12 }} />
+            <div className="msg-empty">
+              <MessageSquare size={56} style={{ opacity: 0.15 }} />
               <div>
-                <p style={{ margin: 0, fontSize: "1rem", fontWeight: "600", color: "rgba(255,255,255,0.35)" }}>
-                  Selecione uma conversa
-                </p>
-                <p style={{ margin: "0.4rem 0 0", fontSize: "0.83rem", color: "rgba(255,255,255,0.2)" }}>
+                <p style={{ margin: 0, fontSize: "1rem", fontWeight: "600", color: "var(--muted)" }}>Selecione uma conversa</p>
+                <p style={{ margin: "0.4rem 0 0", fontSize: "0.83rem", color: "var(--muted)", opacity: 0.7 }}>
                   ou inicie uma nova a partir do mapa ou vagas
                 </p>
               </div>
@@ -390,6 +460,78 @@ export function MessagesPage({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function MessageBubble({ msg, userId }: { msg: ChatMessage; userId: number }) {
+  const isMe = msg.fromUserId === userId;
+  const type = msg.messageType ?? "text";
+
+  if (type === "payment_escrow") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.4rem 0" }}>
+        <div style={{
+          padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%",
+          background: "rgba(34,201,122,0.12)", border: "1px solid rgba(34,201,122,0.3)",
+          display: "flex", alignItems: "center", gap: "0.6rem",
+        }}>
+          <Lock size={16} style={{ color: "#22c97a", flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "payment_released") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.4rem 0" }}>
+        <div style={{
+          padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%",
+          background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)",
+          display: "flex", alignItems: "center", gap: "0.6rem",
+        }}>
+          <CheckCircle size={16} style={{ color: "#6366f1", flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "application") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.4rem 0" }}>
+        <div style={{
+          padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "85%",
+          background: "rgba(255,210,51,0.1)", border: "1px solid rgba(255,210,51,0.25)",
+          display: "flex", alignItems: "center", gap: "0.6rem",
+        }}>
+          <AlertCircle size={16} style={{ color: "var(--yellow-dark)", flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
+      <div style={{
+        maxWidth: "72%",
+        padding: "0.7rem 1rem",
+        borderRadius: isMe ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
+        ...(isMe
+          ? { background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff" }
+          : {}),
+      }}
+        className={isMe ? undefined : "msg-bubble-received"}
+      >
+        <p style={{ margin: 0, fontSize: "0.88rem", lineHeight: "1.45", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
+          {msg.content}
+        </p>
+        <span style={{ display: "block", fontSize: "0.67rem", marginTop: "0.3rem", opacity: 0.55, textAlign: "right" }}>
+          {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+        </span>
+      </div>
     </div>
   );
 }
