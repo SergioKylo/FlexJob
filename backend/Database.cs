@@ -177,82 +177,243 @@ public static class Database
         {
             Console.WriteLine($"Error seeding database: {ex.Message}");
         }
+
+        // Always ensure admin account exists (for databases seeded before admin was added)
+        try
+        {
+            var adminCheck = ExecuteQuery("SELECT id FROM users WHERE email = 'admin@flexjob.com'");
+            if (adminCheck.Count == 0)
+            {
+                string pwhash = Hash("123456");
+                ExecuteNonQuery(
+                    @"INSERT INTO users (name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
+                      VALUES ('Admin FlexJob', 'admin@flexjob.com', @hash, 'admin', 'https://i.pravatar.cc/150?img=8', 'Administrador da plataforma FlexJob.', 5.0, 0, 38.7169, -9.1399, @now)",
+                    new() { { "@hash", pwhash }, { "@now", DateTime.UtcNow.ToString("o") } });
+                Console.WriteLine("Admin user created.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: could not ensure admin user: {ex.Message}");
+        }
     }
 
     private static void SeedMockData()
     {
         Console.WriteLine("Seeding mock data into MySQL database...");
         string pwhash = Hash("123456");
-        string now = DateTime.UtcNow.ToString("o");
+        string now    = DateTime.UtcNow.ToString("o");
+        string d1ago  = DateTime.UtcNow.AddDays(-1).ToString("o");
+        string d3ago  = DateTime.UtcNow.AddDays(-3).ToString("o");
+        string d7ago  = DateTime.UtcNow.AddDays(-7).ToString("o");
+        string d14ago = DateTime.UtcNow.AddDays(-14).ToString("o");
 
-        // 1. Seed Users (Employers & Workers)
-        // Employers
+        // ── 1. ADMIN ──────────────────────────────────────────────────────────
         ExecuteNonQuery(@"
-            INSERT INTO users (id, name, email, password_hash, role, avatar, bio, rating, location_lat, location_lng, created_at)
-            VALUES 
-            (1, 'Café Aurora', 'cafeaurora@email.com', @hash, 'employer', 'https://api.dicebear.com/7.x/bottts/svg?seed=CafeAurora', 'Café acolhedor no centro de Lisboa com pastelaria fina.', 4.8, 38.7109, -9.1424, @now),
-            (2, 'LX Eventos', 'lxeventos@email.com', @hash, 'employer', 'https://api.dicebear.com/7.x/bottts/svg?seed=LXEventos', 'Agência líder em organização de concertos e congressos.', 4.7, 41.1496, -8.6110, @now),
-            (3, 'Norte Logística', 'nortelog@email.com', @hash, 'employer', 'https://api.dicebear.com/7.x/bottts/svg?seed=NorteLog', 'Distribuição rápida e eficiente no norte de Portugal.', 4.6, 40.2056, -8.4196, @now);",
-            new() { { "@hash", pwhash }, { "@now", now } });
+            INSERT INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
+            VALUES (1, 'Admin FlexJob', 'admin@flexjob.com', @hash, 'admin',
+                    'https://i.pravatar.cc/150?img=8',
+                    'Administrador da plataforma FlexJob.', 5.0, 0, 38.7169, -9.1399, @d14ago);",
+            new() { { "@hash", pwhash }, { "@d14ago", d14ago } });
 
-        // Workers
+        // ── 2. EMPLOYERS ──────────────────────────────────────────────────────
         ExecuteNonQuery(@"
-            INSERT INTO users (id, name, email, password_hash, role, avatar, bio, rating, location_lat, location_lng, created_at)
-            VALUES 
-            (4, 'Inês Costa', 'ines@email.com', @hash, 'worker', 'https://api.dicebear.com/7.x/bottts/svg?seed=Ines', 'Experiência em cafés, bar, receção de hotéis e check-in de eventos.', 4.9, 38.7240, -9.1510, @now),
-            (5, 'Miguel Rocha', 'miguel@email.com', @hash, 'worker', 'https://api.dicebear.com/7.x/bottts/svg?seed=Miguel', 'Disponível para logística, armazéns, cargas leves e condução local.', 4.8, 41.1633, -8.6177, @now),
-            (6, 'Sara Martins', 'sara@email.com', @hash, 'worker', 'https://api.dicebear.com/7.x/bottts/svg?seed=Sara', 'Especialista em limpezas, arrumação e organização doméstica.', 4.7, 40.1989, -8.4043, @now),
-            (7, 'Beatriz Santos', 'beatriz@email.com', @hash, 'worker', 'https://api.dicebear.com/7.x/bottts/svg?seed=Beatriz', 'Estudante de hotelaria focada em atendimento ao cliente e retalho.', 4.8, 38.7355, -9.1432, @now);",
-            new() { { "@hash", pwhash }, { "@now", now } });
-
-        // 2. Seed Availabilities for Workers
-        ExecuteNonQuery(@"
-            INSERT INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active)
+            INSERT INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
             VALUES
-            (4, 38.7240, -9.1510, 10.0, '09:00', '18:00', 10.0, 1),
-            (5, 41.1633, -8.6177, 15.0, '08:00', '20:00', 11.5, 1),
-            (6, 40.1989, -8.4043, 8.0, '14:00', '19:00', 9.0, 1),
-            (7, 38.7355, -9.1432, 5.0, '10:00', '17:00', 10.0, 1);");
+            (2, 'Café Aurora',                'cafeaurora@email.com', @hash, 'employer',
+                'https://i.pravatar.cc/150?img=26',
+                'Café acolhedor no centro de Lisboa com pastelaria fina e brunch ao fim de semana.', 4.8, 320.0, 38.7109, -9.1424, @d14ago),
+            (3, 'LX Eventos',                 'lxeventos@email.com',  @hash, 'employer',
+                'https://i.pravatar.cc/150?img=14',
+                'Agência líder em organização de concertos, festivais e congressos em Portugal.', 4.7, 580.0, 41.1496, -8.6110, @d14ago),
+            (4, 'Norte Logística',            'nortelog@email.com',   @hash, 'employer',
+                'https://i.pravatar.cc/150?img=33',
+                'Distribuição expressa e fulfillment no norte de Portugal. ISO 9001 certificados.', 4.6, 210.0, 40.2056, -8.4196, @d14ago),
+            (5, 'Restaurante Solar dos Mouros','solar@email.com',      @hash, 'employer',
+                'https://i.pravatar.cc/150?img=53',
+                'Cozinha portuguesa tradicional com vista para o Castelo de São Jorge. Desde 1987.', 4.9, 440.0, 38.7080, -9.1320, @d7ago),
+            (6, 'Hotel Baia Cascais',          'hotelbaia@email.com',  @hash, 'employer',
+                'https://i.pravatar.cc/150?img=68',
+                'Hotel boutique 4 estrelas na marina de Cascais. Atendimento personalizado.', 4.8, 190.0, 38.6979, -9.4215, @d7ago);",
+            new() { { "@hash", pwhash }, { "@d14ago", d14ago }, { "@d7ago", d7ago } });
 
-        // 3. Seed Jobs (Some open, some completed)
-        // Photos are stored as simple base64 patterns or SVG data urls
-        string coffeeShopPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><rect width='100%' height='100%' fill='%236F4E37'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='24' fill='white'>Café Aurora Vaga</text></svg>";
-        string eventPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><rect width='100%' height='100%' fill='%231F2937'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='24' fill='white'>Montagem de Palco</text></svg>";
-        string logPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='250' viewBox='0 0 400 250'><rect width='100%' height='100%' fill='%23065F46'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='24' fill='white'>Armazém Logística</text></svg>";
+        // ── 3. WORKERS ────────────────────────────────────────────────────────
+        ExecuteNonQuery(@"
+            INSERT INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
+            VALUES
+            (7,  'Inês Costa',     'ines@email.com',    @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=16',
+                 'Experiência em cafés, bar, receção de hotéis e check-in de eventos. Inglês fluente.', 4.9, 174.0, 38.7240, -9.1510, @d14ago),
+            (8,  'Miguel Rocha',   'miguel@email.com',  @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=12',
+                 'Disponível para logística, armazéns, cargas leves e condução local. Carta B.', 4.8,  76.0, 41.1633, -8.6177, @d14ago),
+            (9,  'Sara Martins',   'sara@email.com',    @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=20',
+                 'Especialista em limpezas residenciais e hoteleiras. Rápida, discreta e rigorosa.', 4.7,  36.0, 40.1989, -8.4043, @d7ago),
+            (10, 'Beatriz Santos', 'beatriz@email.com', @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=44',
+                 'Estudante de hotelaria. Inglês, Francês e Espanhol. Foco em atendimento ao cliente.', 4.8,   0.0, 38.7355, -9.1432, @d7ago),
+            (11, 'Carlos Silva',   'carlos@email.com',  @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=22',
+                 'Estafeta urbano e motorista. Bicicleta e trotinete elétrica. Conheço Lisboa muito bem.', 4.6,  44.0, 38.7200, -9.1380, @d3ago),
+            (12, 'Ana Sousa',      'ana@email.com',     @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=47',
+                 'Feiras, mercados e eventos ao ar livre. Energia e simpatia garantidas!', 4.7,  40.0, 38.7150, -9.1290, @d3ago),
+            (13, 'Rui Fernandes',  'rui@email.com',     @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=57',
+                 'Técnico de som freelance. Monto e opero sistemas PA para concertos e eventos.', 4.9,   0.0, 41.1550, -8.6050, @d1ago),
+            (14, 'Marta Pereira',  'marta@email.com',   @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=64',
+                 'Cozinheira de linha com 6 anos de experiência em restaurantes e catering.', 4.8,  60.0, 38.7090, -9.1350, @d1ago);",
+            new() { { "@hash", pwhash }, { "@d14ago", d14ago }, { "@d7ago", d7ago }, { "@d3ago", d3ago }, { "@d1ago", d1ago } });
+
+        // ── 4. AVAILABILITIES ─────────────────────────────────────────────────
+        ExecuteNonQuery(@"
+            INSERT INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active) VALUES
+            ( 7, 38.7240, -9.1510, 10.0, '09:00', '18:00', 10.0, 1),
+            ( 8, 41.1633, -8.6177, 15.0, '08:00', '20:00', 11.5, 1),
+            ( 9, 40.1989, -8.4043,  8.0, '14:00', '19:00',  9.0, 1),
+            (10, 38.7355, -9.1432,  5.0, '10:00', '17:00', 10.0, 1),
+            (11, 38.7200, -9.1380, 12.0, '07:00', '22:00', 11.0, 1),
+            (12, 38.7150, -9.1290,  8.0, '09:00', '19:00', 10.0, 1),
+            (13, 41.1550, -8.6050, 10.0, '12:00', '23:00', 15.0, 1),
+            (14, 38.7090, -9.1350,  6.0, '08:00', '16:00', 12.0, 1);");
+
+        // ── 5. JOBS ───────────────────────────────────────────────────────────
+        string cafePhoto  = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%236F4E37'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>☕ Café Aurora</text></svg>";
+        string eventPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%231a1a2e'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>🎵 LX Eventos</text></svg>";
+        string logPhoto   = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%23065F46'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>📦 Norte Logística</text></svg>";
+        string solarPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%237c3aed'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>🍽️ Solar dos Mouros</text></svg>";
+        string hotelPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%230369a1'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>🏨 Hotel Baia</text></svg>";
 
         ExecuteNonQuery(@"
-            INSERT INTO jobs (id, title, description, category, lat, lng, address, pay, pay_type, duration, status, employer_id, worker_id, photo, created_at)
+            INSERT INTO jobs (id, title, description, category, lat, lng, address, pay, pay_type, duration, status, payment_status, payment_amount, employer_id, worker_id, work_date, photo, created_at)
             VALUES
-            (1, 'Apoio de Mesa no Chiado', 'Servir mesas, acolher clientes e recolher pratos no horário de almoço.', 'restauracao', 38.7109, -9.1424, 'Rua Garrett 15, Chiado, Lisboa', 11.0, 'hourly', '4 horas', 'open', 1, NULL, @coffeePhoto, @now),
-            (2, 'Montagem de Festival Porto', 'Apoio na montagem de stands de comida, cadeiras e grades de proteção.', 'eventos', 41.1496, -8.6110, 'Parque da Cidade, Porto', 12.0, 'hourly', '6 horas', 'open', 2, NULL, @eventPhoto, @now),
-            (3, 'Cargas e Descargas Coimbra', 'Organização de caixotes no armazém principal e descarga de camião local.', 'logistica', 40.2056, -8.4196, 'Zona Industrial da Pedrulha, Coimbra', 10.0, 'hourly', '3 horas', 'open', 3, NULL, @logPhoto, @now),
-            (4, 'Limpeza de Cozinha Exaustiva', 'Limpeza profunda de bancadas, fornos e louças após evento privado.', 'casa', 38.7109, -9.1424, 'Rua de São Paulo, Cais do Sodré, Lisboa', 13.5, 'hourly', '4 horas', 'completed', 1, 4, @coffeePhoto, @now),
-            (5, 'Ajudante de Inventário Loja', 'Contagem manual de stock de vestuário na loja e etiquetagem.', 'retalho', 41.1496, -8.6110, 'Rua de Santa Catarina, Porto', 9.5, 'hourly', '8 horas', 'completed', 2, 5, @eventPhoto, @now);",
-            new() { 
-                { "@coffeePhoto", coffeeShopPhoto }, 
-                { "@eventPhoto", eventPhoto }, 
-                { "@logPhoto", logPhoto },
-                { "@now", now } 
+            -- OPEN jobs
+            (1,  'Apoio de Mesa no Chiado',
+                 'Servir mesas, acolher clientes e recolher pratos no horário de almoço. Experiência mínima de 6 meses em restauração.',
+                 'restauracao', 38.7109, -9.1424, 'Rua Garrett 15, Chiado, Lisboa',
+                 11.0, 'hourly', '4 horas', 'open', 'none', 0, 2, NULL, '2026-06-02', @cafePhoto, @now),
+            (2,  'Montagem de Festival Porto',
+                 'Apoio na montagem de stands de comida, cadeiras e grades de proteção. Trazer calçado de biqueira de aço.',
+                 'eventos', 41.1496, -8.6110, 'Parque da Cidade, Porto',
+                 12.0, 'hourly', '6 horas', 'open', 'none', 0, 3, NULL, '2026-06-07', @eventPhoto, @now),
+            (3,  'Cargas e Descargas Coimbra',
+                 'Organização de caixotes no armazém principal e descarga de camião local. Trabalho físico moderado.',
+                 'logistica', 40.2056, -8.4196, 'Zona Industrial da Pedrulha, Coimbra',
+                 10.0, 'hourly', '3 horas', 'open', 'none', 0, 4, NULL, '2026-05-26', @logPhoto, @now),
+            (6,  'Serviço de Bar em Jantar de Gala',
+                 'Servir cocktails e vinhos num jantar de empresa para 80 convidados. Traje formal obrigatório.',
+                 'restauracao', 38.7080, -9.1320, 'Rua do Alecrim 7, Bica, Lisboa',
+                 12.0, 'hourly', '5 horas', 'open', 'none', 0, 5, NULL, '2026-06-14', @solarPhoto, @now),
+            (7,  'Rececionista Fim de Semana',
+                 'Atendimento presencial a hóspedes, check-in/check-out e gestão de reclamações. Inglês obrigatório.',
+                 'retalho', 38.6979, -9.4215, 'Avenida Marginal 10, Cascais',
+                 10.5, 'hourly', '8 horas', 'open', 'none', 0, 6, NULL, '2026-05-31', @hotelPhoto, @now),
+            (10, 'Apoio em Concerto Rock',
+                 'Controlo de acessos VIP, acompanhamento de artistas e apoio logístico ao staff.',
+                 'eventos', 41.1550, -8.6050, 'Super Bock Arena, Porto',
+                 13.0, 'hourly', '6 horas', 'open', 'none', 0, 3, NULL, '2026-06-20', @eventPhoto, @now),
+            (12, 'Ajuda em Mudança de Casa',
+                 'Transportar e desmontar móveis de apartamento T3. Elevador disponível. Material de embrulho fornecido.',
+                 'logistica', 38.7109, -9.1424, 'Rua da Misericórdia 30, Lisboa',
+                 12.0, 'hourly', '5 horas', 'open', 'none', 0, 2, NULL, '2026-05-28', @cafePhoto, @now),
+            (13, 'Distribuição de Flyers Porto',
+                 'Distribuição de flyers e vouchers na baixa do Porto. Perfil comunicativo e simpático.',
+                 'retalho', 41.1496, -8.6110, 'Avenida dos Aliados, Porto',
+                 8.5, 'hourly', '3 horas', 'open', 'none', 0, 3, NULL, '2026-05-27', @eventPhoto, @now),
+            (15, 'Segurança em Evento Privado',
+                 'Controlo de entradas e supervisão de área VIP em festa privada na Quinta de Monserrate.',
+                 'eventos', 38.7963, -9.3916, 'Quinta de Monserrate, Sintra',
+                 14.0, 'hourly', '6 horas', 'open', 'none', 0, 5, NULL, '2026-06-21', @solarPhoto, @now),
+
+            -- ACCEPTED jobs (payment escrowed)
+            (8,  'Estafeta Urbano Lisboa',
+                 'Entregas de pequenas encomendas no centro de Lisboa de bicicleta ou trotinete elétrica.',
+                 'logistica', 38.7200, -9.1380, 'Praça do Comércio, Lisboa',
+                 11.0, 'hourly', '4 horas', 'accepted', 'escrowed', 44.0, 2, 11, '2026-05-24', @cafePhoto, @d1ago),
+            (11, 'Montagem de Bancas no Mercado',
+                 'Montagem e desmontagem de bancas do mercado semanal. Trabalho matinal das 06h às 12h.',
+                 'eventos', 38.7150, -9.1290, 'Largo de Intendente, Lisboa',
+                 10.0, 'hourly', '4 horas', 'accepted', 'escrowed', 40.0, 5, 12, '2026-05-24', @solarPhoto, @d1ago),
+
+            -- COMPLETED jobs (payment released)
+            (4,  'Limpeza de Cozinha Exaustiva',
+                 'Limpeza profunda de bancadas, fornos e louças após evento privado. Produtos fornecidos.',
+                 'casa', 38.7109, -9.1424, 'Rua de São Paulo 23, Cais do Sodré, Lisboa',
+                 13.5, 'hourly', '4 horas', 'completed', 'released', 54.0, 2, 7, '2026-05-15', @cafePhoto, @d7ago),
+            (5,  'Ajudante de Inventário Loja',
+                 'Contagem manual de stock de vestuário e etiquetagem de novas peças.',
+                 'retalho', 41.1496, -8.6110, 'Rua de Santa Catarina 88, Porto',
+                 9.5, 'hourly', '8 horas', 'completed', 'released', 76.0, 3, 8, '2026-05-10', @eventPhoto, @d7ago),
+            (9,  'Limpeza de Quartos de Hotel',
+                 'Limpeza e preparação de 12 quartos duplos. Roupa de cama e produtos fornecidos pelo hotel.',
+                 'casa', 38.6979, -9.4215, 'Rua da Saudade 5, Cascais',
+                 9.0, 'hourly', '4 horas', 'completed', 'released', 36.0, 6, 9, '2026-05-18', @hotelPhoto, @d7ago),
+            (14, 'Chef de Linha no Jantar de Gala',
+                 'Preparação e emplatamento de entradas e sobremesas para 120 convidados num evento de luxo.',
+                 'restauracao', 38.7080, -9.1320, 'Hotel Bairro Alto, Lisboa',
+                 15.0, 'hourly', '4 horas', 'completed', 'released', 60.0, 5, 7, '2026-05-20', @solarPhoto, @d7ago);",
+            new() {
+                { "@cafePhoto",  cafePhoto  },
+                { "@eventPhoto", eventPhoto },
+                { "@logPhoto",   logPhoto   },
+                { "@solarPhoto", solarPhoto },
+                { "@hotelPhoto", hotelPhoto },
+                { "@now",    now    },
+                { "@d1ago",  d1ago  },
+                { "@d7ago",  d7ago  },
             });
 
-        // 4. Seed Reviews for completed jobs
+        // ── 6. APPLICATIONS ───────────────────────────────────────────────────
         ExecuteNonQuery(@"
-            INSERT INTO reviews (job_id, from_user_id, to_user_id, rating, comment, created_at)
-            VALUES
-            (4, 1, 4, 4.9, 'A Inês foi fantástica! Limpeza impecável e postura super profissional.', @now),
-            (5, 2, 5, 4.8, 'O Miguel ajudou imenso no inventário, rápido e muito atento a detalhes.', @now);",
+            INSERT INTO applications (job_id, worker_id, status, created_at) VALUES
+            ( 1,  7, 'pending', @now),
+            ( 1, 10, 'pending', @now),
+            ( 2, 13, 'pending', @now),
+            ( 6, 14, 'pending', @now),
+            ( 7, 10, 'pending', @now),
+            (10, 13, 'pending', @now),
+            (12, 11, 'pending', @now),
+            (15, 12, 'pending', @now);",
             new() { { "@now", now } });
 
-        // 5. Seed Messages between employers and workers
+        // ── 7. REVIEWS ────────────────────────────────────────────────────────
         ExecuteNonQuery(@"
-            INSERT INTO messages (from_user_id, to_user_id, job_id, content, created_at)
-            VALUES
-            (4, 1, 1, 'Olá! Vi a vossa vaga para apoio no Chiado. Tenho total disponibilidade para a hora de almoço.', @now),
-            (1, 4, 1, 'Excelente Inês! Já trabalhaste com sistemas de registo de pedidos no telemóvel?', @now),
-            (4, 1, 1, 'Sim, no meu último trabalho usávamos a aplicação WinRest. Estou bastante habituada!', @now),
-            (5, 2, 2, 'Boa tarde. Consigo ajudar na montagem de stands no Porto. Levo botas de segurança.', @now),
-            (2, 5, 2, 'Perfeito Miguel! O ponto de encontro é perto do palco principal às 10h. Até amanhã!', @now);",
-            new() { { "@now", now } });
+            INSERT INTO reviews (job_id, from_user_id, to_user_id, rating, comment, created_at) VALUES
+            ( 4, 2,  7, 4.9, 'A Inês foi fantástica! Limpeza impecável e postura super profissional. Voltamos a contactar.', @d7ago),
+            ( 4, 7,  2, 5.0, 'Excelente empregador. Trabalho bem descrito, pagamento rápido. Muito recomendado!', @d7ago),
+            ( 5, 3,  8, 4.8, 'O Miguel foi rápido e muito atento a detalhes. Ótima atitude durante as 8 horas.', @d7ago),
+            ( 5, 8,  3, 4.7, 'Bom ambiente de trabalho. Explicaram tudo claramente. Recomendo a LX Eventos.', @d7ago),
+            ( 9, 6,  9, 4.7, 'A Sara foi eficiente e discreta. Quartos impecáveis. Voltaremos a chamar.', @d7ago),
+            ( 9, 9,  6, 4.8, 'Hotel bem organizado e simpático. Pagamento na hora. Voltaria a trabalhar aqui!', @d7ago),
+            (14, 5,  7, 5.0, 'A Inês é excecional na cozinha! Velocidade e criatividade acima do esperado.', @d7ago),
+            (14, 7,  5, 5.0, 'O Solar dos Mouros é fantástico para trabalhar. Equipa top e comida incrível!', @d7ago);",
+            new() { { "@d7ago", d7ago } });
+
+        // ── 8. MESSAGES ───────────────────────────────────────────────────────
+        ExecuteNonQuery(@"
+            INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at) VALUES
+            ( 7, 2,  1, 'Olá! Vi a vossa vaga para apoio no Chiado. Tenho total disponibilidade para a hora de almoço.', 'text', @now),
+            ( 2, 7,  1, 'Excelente Inês! Já trabalhaste com sistemas de registo de pedidos no telemóvel?', 'text', @now),
+            ( 7, 2,  1, 'Sim! No meu último trabalho usávamos o WinRest. Estou bastante habituada.', 'text', @now),
+            ( 2, 7,  1, 'Perfeito! Passas amanhã para uma conversa rápida? Das 14h às 15h?', 'text', @now),
+            (10, 6,  7, 'Bom dia! Falo inglês, francês e espanhol. Tenho experiência na receção do Sheraton.', 'text', @now),
+            ( 6,10,  7, 'Excelente Beatriz! Os idiomas são uma mais-valia. Vamos analisar a candidatura com atenção.', 'text', @now),
+            (14, 5,  6, 'Boa tarde! Vi a vaga para serviço de bar. Tenho carta de bartender e experiência em eventos.', 'text', @now),
+            ( 5,14,  6, 'Ótimo Marta! Podias partilhar mais sobre a tua experiência com cocktails?', 'text', @now),
+            (14, 5,  6, 'Claro! Trabalhei 2 anos no bar do Hotel Ritz e tenho curso de mixologia pelo ISCTE.', 'text', @now),
+            ( 8, 3,  2, 'Boa tarde. Consigo ajudar na montagem de stands no Porto. Levo botas de biqueira.', 'text', @now),
+            ( 3, 8,  2, 'Perfeito Miguel! O ponto de encontro é junto ao palco principal às 10h. Até amanhã!', 'text', @now),
+            (11, 2,  8, 'Bom dia! Tenho bicicleta própria e conheço Lisboa muito bem. Posso começar amanhã.', 'text', @d1ago),
+            ( 2,11,  8, 'Ótimo Carlos! Então combinado para amanhã às 09h na Praça do Comércio.', 'text', @d1ago),
+            ( 2,11,  8, 'Pagamento efetuado antecipadamente. Bom trabalho amanhã!', 'payment_escrow', @d1ago),
+            (12, 5, 11, 'Olá! Tenho muita experiência em feiras e mercados. Quando posso começar?', 'text', @d1ago),
+            ( 5,12, 11, 'Olá Ana! Podes vir amanhã às 05h45 ao Largo do Intendente?', 'text', @d1ago),
+            ( 5,12, 11, 'Fizemos o pagamento antecipado. Bom trabalho amanhã de manhã!', 'payment_escrow', @d1ago),
+            (13, 3, 10, 'Olá! Sou técnico de som profissional. Tenho experiência em concertos de grande formato.', 'text', @d1ago),
+            ( 3,13, 10, 'Óptimo Rui! Podes enviar o teu portfolio ou referências de eventos anteriores?', 'text', @d1ago);",
+            new() { { "@now", now }, { "@d1ago", d1ago } });
 
         Console.WriteLine("Database seeding completed successfully!");
     }

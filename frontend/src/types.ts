@@ -1,6 +1,6 @@
 export type Language = "pt" | "en";
 
-export type UserRole = "worker" | "employer";
+export type UserRole = "worker" | "employer" | "admin";
 
 export type AppView = "map" | "jobs" | "workers" | "messages" | "wallet" | "profile";
 

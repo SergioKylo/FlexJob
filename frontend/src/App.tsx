@@ -8,6 +8,7 @@ import { MapPage } from "./pages/MapPage";
 import { MessagesPage } from "./pages/MessagesPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { WalletPage } from "./pages/WalletPage";
+import { AdminPage } from "./pages/AdminPage";
 import type { AppView, Language, MatchRecord, Opportunity, User as UserType, WorkMode } from "./types";
 import { api } from "./utils/api";
 import { ChatModal } from "./components/ChatModal";
@@ -155,6 +156,11 @@ export function App() {
 
   if (!user) {
     return <LandingPage language={language} onLanguageChange={setLanguage} onLogin={handleLogin} t={t} />;
+  }
+
+  // Admin gets a completely separate layout
+  if (user.role === "admin") {
+    return <AdminPage onLogout={handleLogout} />;
   }
 
   const allowedViews: AppView[] = user.role === "worker"

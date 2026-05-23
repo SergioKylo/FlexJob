@@ -1198,6 +1198,158 @@ webApp.MapPost("/api/payments/worker-review", (HttpContext context, WorkerReview
     return Results.Ok(new { message = "Avaliação enviada! Obrigado pelo feedback." });
 });
 
+// --- Admin Endpoints ---
+
+webApp.MapGet("/api/admin/stats", (HttpContext context) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var userCount    = Convert.ToInt32(Database.ExecuteQuery("SELECT COUNT(*) as c FROM users WHERE role != 'admin'")[0]["c"]);
+    var workerCount  = Convert.ToInt32(Database.ExecuteQuery("SELECT COUNT(*) as c FROM users WHERE role = 'worker'")[0]["c"]);
+    var empCount     = Convert.ToInt32(Database.ExecuteQuery("SELECT COUNT(*) as c FROM users WHERE role = 'employer'")[0]["c"]);
+    var totalJobs    = Convert.ToInt32(Database.ExecuteQuery("SELECT COUNT(*) as c FROM jobs")[0]["c"]);
+    var activeJobs   = Convert.ToInt32(Database.ExecuteQuery("SELECT COUNT(*) as c FROM jobs WHERE status = 'open'")[0]["c"]);
+    var totalMsgs    = Convert.ToInt32(Database.ExecuteQuery("SELECT COUNT(*) as c FROM messages WHERE message_type = 'text'")[0]["c"]);
+    var revRows      = Database.ExecuteQuery("SELECT COALESCE(SUM(payment_amount),0) as r FROM jobs WHERE payment_status = 'released'");
+    var revenue      = revRows.Count > 0 ? Convert.ToDouble(revRows[0]["r"]) : 0.0;
+
+    return Results.Ok(new { userCount, workerCount, employerCount = empCount, totalJobs, activeJobs, totalMessages = totalMsgs, revenue });
+});
+
+webApp.MapGet("/api/admin/users", (HttpContext context) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var rows = Database.ExecuteQuery(
+        "SELECT id, name, email, role, avatar, bio, rating, wallet_balance, created_at FROM users ORDER BY created_at DESC");
+
+    return Results.Ok(rows.Select(u => new {
+        id            = Convert.ToInt32(u["id"]),
+        name          = u["name"]?.ToString(),
+        email         = u["email"]?.ToString(),
+        role          = u["role"]?.ToString(),
+        avatar        = u["avatar"]?.ToString(),
+        bio           = u["bio"]?.ToString(),
+        rating        = u["rating"] != null ? Convert.ToDouble(u["rating"]) : 5.0,
+        walletBalance = u["wallet_balance"] != null ? Convert.ToDouble(u["wallet_balance"]) : 0.0,
+        createdAt     = u["created_at"]?.ToString(),
+    }));
+});
+
+webApp.MapGet("/api/admin/jobs", (HttpContext context) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var rows = Database.ExecuteQuery(@"
+        SELECT j.id, j.title, j.description, j.category, j.address, j.pay,
+               j.status, j.payment_status, j.payment_amount, j.work_date, j.created_at,
+               e.name as employer_name, w.name as worker_name
+        FROM jobs j
+        JOIN  users e ON j.employer_id = e.id
+        LEFT JOIN users w ON j.worker_id = w.id
+        ORDER BY j.created_at DESC");
+
+    return Results.Ok(rows.Select(j => new {
+        id             = Convert.ToInt32(j["id"]),
+        title          = j["title"]?.ToString(),
+        description    = j["description"]?.ToString(),
+        category       = j["category"]?.ToString(),
+        address        = j["address"]?.ToString(),
+        pay            = Convert.ToDouble(j["pay"]),
+        status         = j["status"]?.ToString(),
+        paymentStatus  = j["payment_status"]?.ToString(),
+        paymentAmount  = Convert.ToDouble(j["payment_amount"]),
+        workDate       = j["work_date"]?.ToString(),
+        createdAt      = j["created_at"]?.ToString(),
+        employerName   = j["employer_name"]?.ToString(),
+        workerName     = j["worker_name"]?.ToString(),
+    }));
+});
+
+webApp.MapGet("/api/admin/messages", (HttpContext context) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var rows = Database.ExecuteQuery(@"
+        SELECT m.id, m.content, m.message_type, m.created_at,
+               u1.name as from_name, u2.name as to_name, j.title as job_title
+        FROM messages m
+        JOIN  users u1 ON m.from_user_id = u1.id
+        JOIN  users u2 ON m.to_user_id   = u2.id
+        LEFT JOIN jobs j ON m.job_id = j.id
+        ORDER BY m.created_at DESC
+        LIMIT 100");
+
+    return Results.Ok(rows.Select(m => new {
+        id          = Convert.ToInt32(m["id"]),
+        fromName    = m["from_name"]?.ToString(),
+        toName      = m["to_name"]?.ToString(),
+        jobTitle    = m["job_title"]?.ToString(),
+        content     = m["content"]?.ToString(),
+        messageType = m["message_type"]?.ToString(),
+        createdAt   = m["created_at"]?.ToString(),
+    }));
+});
+
+webApp.MapDelete("/api/admin/users/{id}", (HttpContext context, int id) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var userRows = Database.ExecuteQuery("SELECT role FROM users WHERE id = @id", new() { { "@id", id } });
+    if (userRows.Count == 0) return Results.NotFound(new { message = "Utilizador não encontrado." });
+    if (userRows[0]["role"]?.ToString() == "admin") return Results.BadRequest(new { message = "Não é possível eliminar o administrador." });
+
+    try
+    {
+        // delete jobs by this employer (and their deps)
+        var empJobs = Database.ExecuteQuery("SELECT id FROM jobs WHERE employer_id = @id", new() { { "@id", id } });
+        foreach (var job in empJobs)
+        {
+            var jid = Convert.ToInt32(job["id"]);
+            Database.ExecuteNonQuery("DELETE FROM messages     WHERE job_id = @j", new() { { "@j", jid } });
+            Database.ExecuteNonQuery("DELETE FROM reviews      WHERE job_id = @j", new() { { "@j", jid } });
+            Database.ExecuteNonQuery("DELETE FROM applications WHERE job_id = @j", new() { { "@j", jid } });
+        }
+        Database.ExecuteNonQuery("DELETE FROM jobs         WHERE employer_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("UPDATE jobs SET worker_id = NULL WHERE worker_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("DELETE FROM messages     WHERE from_user_id = @id OR to_user_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("DELETE FROM reviews      WHERE from_user_id = @id OR to_user_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("DELETE FROM applications WHERE worker_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("DELETE FROM availabilities WHERE worker_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("DELETE FROM users        WHERE id = @id", new() { { "@id", id } });
+        return Results.Ok(new { message = "Utilizador eliminado com sucesso." });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = $"Erro ao eliminar: {ex.Message}" });
+    }
+});
+
+webApp.MapDelete("/api/admin/jobs/{id}", (HttpContext context, int id) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    try
+    {
+        Database.ExecuteNonQuery("DELETE FROM messages     WHERE job_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("DELETE FROM reviews      WHERE job_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("DELETE FROM applications WHERE job_id = @id", new() { { "@id", id } });
+        Database.ExecuteNonQuery("DELETE FROM jobs         WHERE id     = @id", new() { { "@id", id } });
+        return Results.Ok(new { message = "Vaga eliminada com sucesso." });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new { message = $"Erro ao eliminar: {ex.Message}" });
+    }
+});
+
+webApp.MapPost("/api/admin/jobs/{id}/close", (HttpContext context, int id) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+    Database.ExecuteNonQuery("UPDATE jobs SET status = 'closed' WHERE id = @id", new() { { "@id", id } });
+    return Results.Ok(new { message = "Vaga fechada pelo admin." });
+});
+
 // --- Wallet Endpoint ---
 
 webApp.MapGet("/api/wallet", (HttpContext context) =>
@@ -1263,6 +1415,14 @@ public record TipRequest(int JobId, double Amount);
 public record CloseJobRequest(int JobId);
 public record UpdateJobRequest(int JobId, string Title, string Description, double Pay, string Duration, string? WorkDate = null, string? Address = null);
 public record WorkerReviewRequest(int JobId, double Rating, string? Comment = null);
+
+// --- Admin Helper ---
+public static class AdminHelper
+{
+    public static bool IsAdmin(HttpContext ctx) =>
+        ctx.User.Identity?.IsAuthenticated == true &&
+        ctx.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value == "admin";
+}
 
 // --- Geospatial helpers ---
 public static class GeoHelper

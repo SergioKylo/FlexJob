@@ -273,6 +273,31 @@ export const api = {
   async getWallet(): Promise<{ balance: number; escrow: number; transactions: Array<{ title: string; amount: number; partnerName: string; date: string; status: string }> }> {
     return request<any>("/api/wallet");
   },
+
+  // Admin
+  admin: {
+    async getStats(): Promise<{ userCount: number; workerCount: number; employerCount: number; totalJobs: number; activeJobs: number; totalMessages: number; revenue: number }> {
+      return request<any>("/api/admin/stats");
+    },
+    async getUsers(): Promise<any[]> {
+      return request<any[]>("/api/admin/users");
+    },
+    async getJobs(): Promise<any[]> {
+      return request<any[]>("/api/admin/jobs");
+    },
+    async getMessages(): Promise<any[]> {
+      return request<any[]>("/api/admin/messages");
+    },
+    async deleteUser(id: number): Promise<{ message: string }> {
+      return request<any>(`/api/admin/users/${id}`, { method: "DELETE" });
+    },
+    async deleteJob(id: number): Promise<{ message: string }> {
+      return request<any>(`/api/admin/jobs/${id}`, { method: "DELETE" });
+    },
+    async closeJob(id: number): Promise<{ message: string }> {
+      return request<any>(`/api/admin/jobs/${id}/close`, { method: "POST" });
+    },
+  },
 };
 
 // Distance Helper
