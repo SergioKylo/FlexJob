@@ -939,7 +939,10 @@ webApp.MapPost("/api/payments/release", (HttpContext context, ReleasePaymentRequ
     if (paymentStatus != "escrowed")
         return Results.BadRequest(new { message = "O pagamento em garantia ainda não foi efetuado." });
 
-    var workerId = Convert.ToInt32(job["worker_id"]);
+    var workerIdRaw = job["worker_id"];
+    if (workerIdRaw == null || workerIdRaw == DBNull.Value)
+        return Results.BadRequest(new { message = "Não podes confirmar um pagamento sem trabalhador atribuído." });
+    var workerId = Convert.ToInt32(workerIdRaw);
     var paymentAmountRaw = job.ContainsKey("payment_amount") && job["payment_amount"] != null && job["payment_amount"] != DBNull.Value ? Convert.ToDouble(job["payment_amount"]) : 0;
     var pay = paymentAmountRaw > 0 ? paymentAmountRaw : Convert.ToDouble(job["pay"]);
 
@@ -1161,7 +1164,8 @@ webApp.MapPost("/api/payments/worker-review", (HttpContext context, WorkerReview
     if (jobs.Count == 0) return Results.NotFound(new { message = "Trabalho não encontrado." });
     var job = jobs[0];
 
-    if (Convert.ToInt32(job["worker_id"]) != userId)
+    var workerIdCheck = job["worker_id"];
+    if (workerIdCheck == null || workerIdCheck == DBNull.Value || Convert.ToInt32(workerIdCheck) != userId)
         return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
     if (job["payment_status"]?.ToString() != "released")
         return Results.BadRequest(new { message = "O pagamento ainda não foi confirmado." });

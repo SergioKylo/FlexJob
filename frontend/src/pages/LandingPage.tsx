@@ -31,6 +31,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
   const [region, setRegion]     = useState("Lisboa");
   const [bio, setBio]           = useState("");
   const [hourlyRate, setHourlyRate] = useState(10);
+  const [password, setPassword] = useState("123456");
   const [error, setError]       = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
 
@@ -140,7 +141,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
 
             <label className="form-row">
               <span>{t("password")}</span>
-              <input type="password" defaultValue="123456" disabled style={{ opacity: 0.5 }} />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="123456" />
             </label>
 
             {authMode === "signup" && (
@@ -191,15 +192,16 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
               <p style={{ margin: "0 0 0.5rem", fontSize: "0.7rem", fontWeight: "700", color: "var(--yellow-dark)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                 Contas de demonstração (senha: 123456)
               </p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.4rem" }}>
                 {[
                   { label: "💼 Trabalhadora", email: "ines@email.com" },
-                  { label: "🏢 Empregador", email: "cafeaurora@email.com" },
+                  { label: "🏢 Empregador",   email: "cafeaurora@email.com" },
+                  { label: "🛡️ Admin",        email: "admin@flexjob.com" },
                 ].map((acc) => (
                   <button
                     key={acc.email}
                     type="button"
-                    onClick={() => { setEmail(acc.email); setAuthMode("login"); }}
+                    onClick={() => { setEmail(acc.email); setPassword("123456"); setAuthMode("login"); }}
                     style={{ padding: "0.45rem 0.6rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: "0.75rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s" }}
                   >
                     <strong style={{ display: "block", fontSize: "0.78rem" }}>{acc.label}</strong>

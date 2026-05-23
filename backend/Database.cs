@@ -234,8 +234,11 @@ public static class Database
                 'Cozinha portuguesa tradicional com vista para o Castelo de São Jorge. Desde 1987.', 4.9, 440.0, 38.7080, -9.1320, @d7ago),
             (6, 'Hotel Baia Cascais',          'hotelbaia@email.com',  @hash, 'employer',
                 'https://i.pravatar.cc/150?img=68',
-                'Hotel boutique 4 estrelas na marina de Cascais. Atendimento personalizado.', 4.8, 190.0, 38.6979, -9.4215, @d7ago);",
-            new() { { "@hash", pwhash }, { "@d14ago", d14ago }, { "@d7ago", d7ago } });
+                'Hotel boutique 4 estrelas na marina de Cascais. Atendimento personalizado.', 4.8, 190.0, 38.6979, -9.4215, @d7ago),
+            (15,'Braga Eventos & Catering',    'bragaevents@email.com',@hash, 'employer',
+                'https://i.pravatar.cc/150?img=11',
+                'Empresa local de eventos, casamentos e catering na região de Braga. Qualidade e tradição minhota.', 4.7, 350.0, 41.5454, -8.4265, @d3ago);",
+            new() { { "@hash", pwhash }, { "@d14ago", d14ago }, { "@d7ago", d7ago }, { "@d3ago", d3ago } });
 
         // ── 3. WORKERS ────────────────────────────────────────────────────────
         ExecuteNonQuery(@"
@@ -264,7 +267,13 @@ public static class Database
                  'Técnico de som freelance. Monto e opero sistemas PA para concertos e eventos.', 4.9,   0.0, 41.1550, -8.6050, @d1ago),
             (14, 'Marta Pereira',  'marta@email.com',   @hash, 'worker',
                  'https://i.pravatar.cc/150?img=64',
-                 'Cozinheira de linha com 6 anos de experiência em restaurantes e catering.', 4.8,  60.0, 38.7090, -9.1350, @d1ago);",
+                 'Cozinheira de linha com 6 anos de experiência em restaurantes e catering.', 4.8,  60.0, 38.7090, -9.1350, @d1ago),
+            (16, 'Tiago Bento',    'tiago@email.com',   @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=52',
+                 'Estudante universitário em Braga. Disponível para eventos, catering e apoio geral. Energético e pontual.', 4.7,   0.0, 41.5510, -8.4310, @d3ago),
+            (17, 'Joana Vieira',   'joana@email.com',   @hash, 'worker',
+                 'https://i.pravatar.cc/150?img=39',
+                 'Experiência em restauração e organização de eventos. Natural de Braga, conheço a cidade na perfeição.', 4.8,  20.0, 41.5400, -8.4200, @d3ago);",
             new() { { "@hash", pwhash }, { "@d14ago", d14ago }, { "@d7ago", d7ago }, { "@d3ago", d3ago }, { "@d1ago", d1ago } });
 
         // ── 4. AVAILABILITIES ─────────────────────────────────────────────────
@@ -277,14 +286,17 @@ public static class Database
             (11, 38.7200, -9.1380, 12.0, '07:00', '22:00', 11.0, 1),
             (12, 38.7150, -9.1290,  8.0, '09:00', '19:00', 10.0, 1),
             (13, 41.1550, -8.6050, 10.0, '12:00', '23:00', 15.0, 1),
-            (14, 38.7090, -9.1350,  6.0, '08:00', '16:00', 12.0, 1);");
+            (14, 38.7090, -9.1350,  6.0, '08:00', '16:00', 12.0, 1),
+            (16, 41.5510, -8.4310, 10.0, '10:00', '22:00', 10.0, 1),
+            (17, 41.5400, -8.4200,  8.0, '09:00', '20:00', 11.0, 1);");
 
         // ── 5. JOBS ───────────────────────────────────────────────────────────
-        string cafePhoto  = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%236F4E37'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>☕ Café Aurora</text></svg>";
-        string eventPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%231a1a2e'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>🎵 LX Eventos</text></svg>";
-        string logPhoto   = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%23065F46'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>📦 Norte Logística</text></svg>";
-        string solarPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%237c3aed'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>🍽️ Solar dos Mouros</text></svg>";
-        string hotelPhoto = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='220'><rect width='100%' height='100%' fill='%230369a1'/><text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-size='22' fill='white' font-family='sans-serif'>🏨 Hotel Baia</text></svg>";
+        string cafePhoto  = "https://picsum.photos/seed/cafechiado/400/220";
+        string eventPhoto = "https://picsum.photos/seed/festival2026/400/220";
+        string logPhoto   = "https://picsum.photos/seed/warehouse99/400/220";
+        string solarPhoto = "https://picsum.photos/seed/restaurant77/400/220";
+        string hotelPhoto = "https://picsum.photos/seed/hotelcascais/400/220";
+        string ragaPhoto  = "https://picsum.photos/seed/braga2026/400/220";
 
         ExecuteNonQuery(@"
             INSERT INTO jobs (id, title, description, category, lat, lng, address, pay, pay_type, duration, status, payment_status, payment_amount, employer_id, worker_id, work_date, photo, created_at)
@@ -327,6 +339,28 @@ public static class Database
                  'eventos', 38.7963, -9.3916, 'Quinta de Monserrate, Sintra',
                  14.0, 'hourly', '6 horas', 'open', 'none', 0, 5, NULL, '2026-06-21', @solarPhoto, @now),
 
+            -- BRAGA jobs
+            (16, 'Barman em Festa Académica',
+                 'Servir bebidas e cocktails em festa de final de curso na Universidade do Minho. Ambiente animado e jovem.',
+                 'restauracao', 41.5454, -8.4265, 'Universidade do Minho, Campus de Gualtar, Braga',
+                 11.0, 'hourly', '5 horas', 'open', 'none', 0, 15, NULL, '2026-06-13', @ragaPhoto, @now),
+            (17, 'Apoio a Casamento em Quinta',
+                 'Receção de convidados, montagem de mesas e apoio durante o jantar de casamento. Traje formal exigido.',
+                 'eventos', 41.5600, -8.3900, 'Quinta dos Carvalhos, Braga',
+                 13.0, 'hourly', '8 horas', 'open', 'none', 0, 15, NULL, '2026-06-28', @ragaPhoto, @now),
+            (18, 'Auxiliar de Cozinha em Restaurante',
+                 'Preparação de mise en place, lavagem de louça e apoio ao chef. Ritmo intenso ao almoço e jantar.',
+                 'restauracao', 41.5495, -8.4280, 'Rua do Souto 48, Centro Histórico, Braga',
+                 10.5, 'hourly', '4 horas', 'open', 'none', 0, 15, NULL, '2026-05-30', @ragaPhoto, @now),
+            (19, 'Promotor em Centro Comercial',
+                 'Promover nova linha de produtos numa grande superfície comercial. Perfil simpático e comunicativo.',
+                 'retalho', 41.5310, -8.4150, 'Braga Parque, Braga',
+                 9.5, 'hourly', '6 horas', 'open', 'none', 0, 15, NULL, '2026-06-05', @ragaPhoto, @now),
+            (20, 'Limpeza Pós-Evento em Pavilhão',
+                 'Limpeza geral do pavilhão após evento desportivo. Varrer, lavar pavimento e recolher lixo.',
+                 'casa', 41.5550, -8.4100, 'Pavilhão Desportivo Municipal, Braga',
+                 10.0, 'hourly', '3 horas', 'open', 'none', 0, 15, NULL, '2026-05-27', @ragaPhoto, @now),
+
             -- ACCEPTED jobs (payment escrowed)
             (8,  'Estafeta Urbano Lisboa',
                  'Entregas de pequenas encomendas no centro de Lisboa de bicicleta ou trotinete elétrica.',
@@ -360,6 +394,7 @@ public static class Database
                 { "@logPhoto",   logPhoto   },
                 { "@solarPhoto", solarPhoto },
                 { "@hotelPhoto", hotelPhoto },
+                { "@ragaPhoto",  ragaPhoto  },
                 { "@now",    now    },
                 { "@d1ago",  d1ago  },
                 { "@d7ago",  d7ago  },

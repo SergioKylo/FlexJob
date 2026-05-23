@@ -37,6 +37,19 @@ function CenterMap({ lat, lng }: { lat?: number; lng?: number }) {
   return null;
 }
 
+function FlyToMarker({ lat, lng }: { lat: number; lng: number }) {
+  const map = useMap();
+  const prev = useRef("");
+  useEffect(() => {
+    const key = `${lat},${lng}`;
+    if (prev.current !== key) {
+      prev.current = key;
+      map.flyTo([lat, lng], Math.max(map.getZoom(), 14), { animate: true, duration: 0.8 });
+    }
+  }, [lat, lng, map]);
+  return null;
+}
+
 function MapClickHandler({ onClick, enabled }: { onClick: (latlng: L.LatLng) => void; enabled: boolean }) {
   useMapEvents({
     click(e) {
@@ -63,6 +76,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
   const effectiveMode: WorkMode = "need"; // Both employers and workers see jobs on the map
 
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number } | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [sort, setSort] = useState<SortMode>("match");
@@ -267,7 +281,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
         <div className="hero-stats">
           <span><strong>{filtered.length}</strong><small>vagas disponíveis</small></span>
           <span><strong>{user.rating?.toFixed(1) ?? "5.0"}</strong><small>A minha avaliação</small></span>
-          <span><strong>{user.lat ? "Focado" : "Geral"}</strong><small>{user.lat ? "Região Selecionada" : "Portugal"}</small></span>
+          <span><strong>€{(user.walletBalance ?? 0).toFixed(0)}</strong><small>na carteira</small></span>
         </div>
       </section>
 
@@ -398,15 +412,25 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
                 </select>
               </div>
 
+              {/* Job list header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 2px 8px", borderTop: "1px solid var(--line)", marginTop: "2px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.6px" }}>
+                  {loading ? "A carregar…" : `${filtered.length} vaga${filtered.length !== 1 ? "s" : ""} encontrada${filtered.length !== 1 ? "s" : ""}`}
+                </span>
+                {!loading && filtered.length > 0 && (
+                  <span style={{ fontSize: "11px", color: "var(--muted)" }}>clique para ver no mapa</span>
+                )}
+              </div>
+
               <div className="job-list" style={{ flex: 1 }}>
-                {loading && <div style={{ textAlign: "center", padding: "20px", fontWeight: "bold" }}>A carregar...</div>}
                 {!loading && filtered.length === 0 && (
-                  <div style={{ textAlign: "center", color: "var(--muted)", padding: "40px 10px" }}>
-                    Nenhum registo encontrado na sua área de residência.
+                  <div style={{ textAlign: "center", color: "var(--muted)", padding: "40px 10px", fontSize: "14px" }}>
+                    Nenhuma vaga encontrada na sua área.
                   </div>
                 )}
                 {filtered.map((item) => (
-                  <article className={`job-card ${activeItem?.id === item.id ? "active" : ""} ${isMatched(item) ? "matched" : ""}`} key={item.id} onClick={() => setActiveId(item.id)}>
+                  <article className={`job-card ${activeItem?.id === item.id ? "active" : ""} ${isMatched(item) ? "matched" : ""}`} key={item.id}
+                    onClick={() => { setActiveId(item.id); setFlyTarget({ lat: item.lat, lng: item.lng }); }}>
                     <div className="job-meta">
                       <span className="tag">{t(item.type)}</span>
                       <span className="pay">EUR {item.pay}/h</span>
@@ -446,6 +470,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
             <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <CenterMap lat={user.lat} lng={user.lng} />
             <MapClickHandler onClick={handleMapClick} enabled={isPlacingAvailabilityPin} />
+            {flyTarget && <FlyToMarker lat={flyTarget.lat} lng={flyTarget.lng} />}
 
             {/* Display list items */}
             {filtered.map((item) => (
