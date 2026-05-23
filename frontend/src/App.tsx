@@ -195,7 +195,7 @@ export function App() {
     ),
     messages: <MessagesPage user={user} />,
     wallet:   <WalletPage t={t} />,
-    profile:  <ProfilePage t={t} user={user} />,
+    profile:  <ProfilePage t={t} user={user} onUserUpdate={(updated) => setUser((prev) => prev ? { ...prev, ...updated } : prev)} />,
   };
 
   return (

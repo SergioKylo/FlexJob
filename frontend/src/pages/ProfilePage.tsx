@@ -58,6 +58,11 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
   const [avatarSrc, setAvatarSrc] = useState<string>(user.avatar ?? "");
   const [savingAvatar, setSavingAvatar] = useState(false);
 
+  // Sync avatar if user prop changes (e.g. after onUserUpdate propagates back)
+  useEffect(() => {
+    if (user.avatar) setAvatarSrc(user.avatar);
+  }, [user.avatar]);
+
   // Region
   const [editRegion, setEditRegion] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState(region);
