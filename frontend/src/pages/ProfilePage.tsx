@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Star, MapPin, Briefcase, User, Clock, CheckCircle, CreditCard, Edit2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Star, MapPin, Briefcase, User, Clock, CreditCard, Edit2, X } from "lucide-react";
 import type { User as UserType } from "../types";
 import type { TranslationKey } from "../i18n/translations";
 import { api } from "../utils/api";
@@ -31,6 +31,13 @@ function nearestRegion(lat?: number, lng?: number): string {
   return best.name;
 }
 
+const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+  open:      { label: "Aberta",     color: "#22c97a", bg: "rgba(34,201,122,0.1)"  },
+  accepted:  { label: "Em curso",   color: "#6366f1", bg: "rgba(99,102,241,0.1)"  },
+  completed: { label: "Concluída",  color: "#f59e0b", bg: "rgba(245,158,11,0.1)"  },
+  closed:    { label: "Fechada",    color: "var(--muted)", bg: "var(--surface2)"  },
+};
+
 export function ProfilePage({ user }: ProfilePageProps) {
   const isWorker = user.role === "worker";
   const region = nearestRegion(user.lat, user.lng);
@@ -40,6 +47,16 @@ export function ProfilePage({ user }: ProfilePageProps) {
   const [selectedRegion, setSelectedRegion] = useState(region);
   const [savingRegion, setSavingRegion] = useState(false);
   const [regionSaved, setRegionSaved] = useState(false);
+
+  // Employer jobs
+  const [myJobs, setMyJobs] = useState<any[]>([]);
+  const [closingId, setClosingId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!isWorker) {
+      api.getMyJobs().then(setMyJobs).catch(() => {});
+    }
+  }, [isWorker]);
 
   async function handleSaveRegion() {
     const r = REGIONS.find((x) => x.name === selectedRegion) ?? REGIONS[0];
@@ -61,10 +78,25 @@ export function ProfilePage({ user }: ProfilePageProps) {
     }
   }
 
+  async function handleCloseJob(jobId: number) {
+    setClosingId(jobId);
+    try {
+      await api.closeJob(jobId);
+      setMyJobs((prev) => prev.map((j) => j.id === jobId ? { ...j, status: "closed" } : j));
+    } catch {
+      alert("Erro ao fechar vaga.");
+    } finally {
+      setClosingId(null);
+    }
+  }
+
   const roleLabel  = isWorker ? "Trabalhador" : "Empreendedor";
   const roleColor  = isWorker ? "#10b981" : "#f59e0b";
   const roleBg     = isWorker ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)";
   const roleBorder = isWorker ? "rgba(16,185,129,0.3)"  : "rgba(245,158,11,0.3)";
+
+  const activeJobs  = myJobs.filter((j) => j.status === "open" || j.status === "accepted");
+  const pastJobs    = myJobs.filter((j) => j.status === "completed" || j.status === "closed");
 
   return (
     <section style={{ padding: "2rem", maxWidth: "700px", margin: "0 auto" }}>
@@ -123,9 +155,9 @@ export function ProfilePage({ user }: ProfilePageProps) {
               { icon: <CreditCard size={18} />,label: "Taxa de serviço",    value: "€0/h" },
             ]
           : [
-              { icon: <Briefcase size={18} />, label: "Vagas publicadas",         value: "–" },
-              { icon: <User size={18} />,      label: "Trabalhadores contratados", value: "–" },
-              { icon: <Star size={18} />,      label: "Avaliação dada",           value: `${rating.toFixed(1)} ★` },
+              { icon: <Briefcase size={18} />, label: "Vagas publicadas",         value: String(myJobs.length || "–") },
+              { icon: <User size={18} />,      label: "Vagas ativas",             value: String(activeJobs.length || "–") },
+              { icon: <Star size={18} />,      label: "Avaliação média",          value: `${rating.toFixed(1)} ★` },
             ]
         ).map((stat) => (
           <div
@@ -201,47 +233,108 @@ export function ProfilePage({ user }: ProfilePageProps) {
             </div>
           </>
         ) : (
-          <InfoCard title="Região de atuação" icon={<MapPin size={15} />}>
-            {region} · Publica vagas para trabalhos de curta duração, eventos e apoio pontual.
-          </InfoCard>
-        )}
-      </div>
+          <>
+            <InfoCard title="Região de atuação" icon={<MapPin size={15} />}>
+              {region} · Publica vagas para trabalhos de curta duração, eventos e apoio pontual.
+            </InfoCard>
 
-      {/* Account status */}
-      <div style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.25rem 1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "1rem" }}>
-          <CheckCircle size={16} style={{ color: "#22c97a" }} />
-          <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "700", color: "var(--ink)" }}>Estado da Conta</h3>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-          {[
-            { label: "Conta ativa na FlexJob",     done: true,  note: null },
-            { label: "Pagamentos com garantia",     done: true,  note: "O dinheiro fica retido até confirmação" },
-            { label: "Avaliações em tempo real",    done: true,  note: null },
-            { label: "Perfil público",              done: !!(user.bio && user.bio.trim()), note: user.bio?.trim() ? null : "Adicione uma bio para se destacar" },
-          ].map((item) => (
-            <div key={item.label} style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
-              <span style={{
-                width: "18px", height: "18px", borderRadius: "5px", flexShrink: 0, marginTop: "1px",
-                background: item.done ? "rgba(34,201,122,0.15)" : "var(--surface)",
-                border: item.done ? "1px solid rgba(34,201,122,0.35)" : "1px solid var(--line)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: item.done ? "#22c97a" : "var(--muted)",
-                fontSize: "0.7rem",
-              }}>
-                {item.done ? "✓" : "○"}
-              </span>
-              <div>
-                <span style={{ fontSize: "0.85rem", color: item.done ? "var(--ink)" : "var(--muted)", fontWeight: item.done ? "500" : "400" }}>
-                  {item.label}
-                </span>
-                {item.note && (
-                  <p style={{ margin: "0.1rem 0 0", fontSize: "0.72rem", color: "var(--muted)" }}>{item.note}</p>
-                )}
+            {/* Employer active jobs */}
+            <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.1rem 1.25rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.75rem" }}>
+                <Briefcase size={15} style={{ color: "#6366f1" }} />
+                <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>
+                  Vagas Ativas ({activeJobs.length})
+                </h4>
               </div>
+
+              {myJobs.length === 0 ? (
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>Ainda não publicou nenhuma vaga.</p>
+              ) : activeJobs.length === 0 ? (
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>Sem vagas ativas de momento.</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  {activeJobs.map((job) => {
+                    const st = STATUS_LABELS[job.status] ?? STATUS_LABELS.open;
+                    return (
+                      <div key={job.id} style={{
+                        display: "flex", alignItems: "center", gap: "0.75rem",
+                        padding: "0.7rem 0.9rem", borderRadius: "10px",
+                        background: "var(--surface2)", border: "1px solid var(--line)",
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
+                            <span style={{ fontSize: "0.88rem", fontWeight: "700", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {job.title}
+                            </span>
+                            <span style={{ fontSize: "0.68rem", fontWeight: "700", padding: "0.15rem 0.5rem", borderRadius: "6px", background: st.bg, color: st.color, flexShrink: 0 }}>
+                              {st.label}
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", gap: "0.75rem", fontSize: "0.75rem", color: "var(--muted)" }}>
+                            <span>€{job.pay}/h</span>
+                            {job.workDate && <span>📅 {job.workDate}</span>}
+                            {job.applicationsCount > 0 && <span>👥 {job.applicationsCount} candidatura{job.applicationsCount !== 1 ? "s" : ""}</span>}
+                          </div>
+                        </div>
+                        {job.status === "open" && (
+                          <button
+                            onClick={() => handleCloseJob(job.id)}
+                            disabled={closingId === job.id}
+                            title="Fechar vaga"
+                            style={{
+                              display: "flex", alignItems: "center", gap: "0.3rem",
+                              padding: "0.35rem 0.65rem", borderRadius: "8px",
+                              border: "1px solid rgba(240,96,96,0.35)",
+                              background: "rgba(240,96,96,0.08)", color: "#f06060",
+                              fontSize: "0.75rem", fontWeight: "700", cursor: "pointer",
+                              flexShrink: 0, opacity: closingId === job.id ? 0.5 : 1,
+                            }}
+                          >
+                            <X size={12} />
+                            Fechar
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Past jobs */}
+              {pastJobs.length > 0 && (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", margin: "1rem 0 0.6rem" }}>
+                    <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>
+                      Histórico ({pastJobs.length})
+                    </h4>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                    {pastJobs.map((job) => {
+                      const st = STATUS_LABELS[job.status] ?? STATUS_LABELS.closed;
+                      return (
+                        <div key={job.id} style={{
+                          display: "flex", alignItems: "center", gap: "0.75rem",
+                          padding: "0.55rem 0.9rem", borderRadius: "10px",
+                          background: "var(--surface2)", border: "1px solid var(--line)",
+                          opacity: 0.7,
+                        }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <span style={{ fontSize: "0.83rem", fontWeight: "600", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>
+                              {job.title}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: "0.68rem", fontWeight: "700", padding: "0.15rem 0.5rem", borderRadius: "6px", background: st.bg, color: st.color, flexShrink: 0 }}>
+                            {st.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </div>
     </section>
   );

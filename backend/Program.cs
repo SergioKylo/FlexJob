@@ -276,6 +276,7 @@ webApp.MapGet("/api/jobs", (HttpContext context, double? lat, double? lng, doubl
             pay = Convert.ToDouble(job["pay"]),
             payType = job["pay_type"]?.ToString(),
             duration = job["duration"]?.ToString(),
+            workDate = job.ContainsKey("work_date") ? job["work_date"]?.ToString() : "",
             status = job["status"]?.ToString(),
             employerId = Convert.ToInt32(job["employer_id"]),
             employerName = job["employer_name"]?.ToString(),
@@ -309,8 +310,8 @@ webApp.MapPost("/api/jobs", async (HttpContext context, JobPostRequest request) 
 
     var createdAt = DateTime.UtcNow.ToString("o");
     Database.ExecuteNonQuery(
-        @"INSERT INTO jobs (title, description, category, lat, lng, address, pay, pay_type, duration, status, employer_id, photo, created_at)
-          VALUES (@title, @description, @category, @lat, @lng, @address, @pay, @pay_type, @duration, 'open', @employer_id, @photo, @created_at)",
+        @"INSERT INTO jobs (title, description, category, lat, lng, address, pay, pay_type, duration, work_date, status, employer_id, photo, created_at)
+          VALUES (@title, @description, @category, @lat, @lng, @address, @pay, @pay_type, @duration, @work_date, 'open', @employer_id, @photo, @created_at)",
         new()
         {
             { "@title", request.Title },
@@ -322,6 +323,7 @@ webApp.MapPost("/api/jobs", async (HttpContext context, JobPostRequest request) 
             { "@pay", request.Pay },
             { "@pay_type", request.PayType ?? "fixed" },
             { "@duration", request.Duration ?? "" },
+            { "@work_date", request.WorkDate ?? "" },
             { "@employer_id", userId },
             { "@photo", request.Photo ?? "" },
             { "@created_at", createdAt }
@@ -388,6 +390,7 @@ webApp.MapGet("/api/jobs/my", (HttpContext context) =>
             workerId = job["worker_id"] != null ? Convert.ToInt32(job["worker_id"]) : (int?)null,
             workerName = role == "employer" ? job["worker_name"]?.ToString() : null,
             workerAvatar = role == "employer" ? job["worker_avatar"]?.ToString() : null,
+            workDate = job.ContainsKey("work_date") ? job["work_date"]?.ToString() : "",
             applicationsCount = appsCount,
             photo = job["photo"]?.ToString(),
             createdAt = job["created_at"]?.ToString()
@@ -1075,6 +1078,78 @@ webApp.MapPost("/api/payments/tip", (HttpContext context, TipRequest request) =>
     return Results.Ok(new { message = "Gorjeta enviada com sucesso!", amount = request.Amount });
 });
 
+// --- Close Job (Employer) ---
+
+webApp.MapPost("/api/jobs/close", (HttpContext context, CloseJobRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+
+    if (role != "employer")
+        return Results.Json(new { message = "Apenas empreendedores podem fechar vagas." }, statusCode: 403);
+
+    var jobs = Database.ExecuteQuery("SELECT employer_id FROM jobs WHERE id = @id", new() { { "@id", request.JobId } });
+    if (jobs.Count == 0) return Results.NotFound(new { message = "Vaga não encontrada." });
+    if (Convert.ToInt32(jobs[0]["employer_id"]) != userId)
+        return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
+
+    Database.ExecuteNonQuery("UPDATE jobs SET status = 'closed' WHERE id = @id", new() { { "@id", request.JobId } });
+    return Results.Ok(new { message = "Vaga fechada com sucesso." });
+});
+
+// --- Worker Review (worker rates employer after job done) ---
+
+webApp.MapPost("/api/payments/worker-review", (HttpContext context, WorkerReviewRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+
+    if (role != "worker")
+        return Results.Json(new { message = "Apenas trabalhadores podem usar este endpoint." }, statusCode: 403);
+
+    var jobs = Database.ExecuteQuery("SELECT employer_id, worker_id, payment_status FROM jobs WHERE id = @id", new() { { "@id", request.JobId } });
+    if (jobs.Count == 0) return Results.NotFound(new { message = "Trabalho não encontrado." });
+    var job = jobs[0];
+
+    if (Convert.ToInt32(job["worker_id"]) != userId)
+        return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
+    if (job["payment_status"]?.ToString() != "released")
+        return Results.BadRequest(new { message = "O pagamento ainda não foi confirmado." });
+
+    var employerId = Convert.ToInt32(job["employer_id"]);
+
+    // Check if already reviewed
+    var existing = Database.ExecuteQuery(
+        "SELECT id FROM reviews WHERE job_id = @jobId AND from_user_id = @from",
+        new() { { "@jobId", request.JobId }, { "@from", userId } });
+    if (existing.Count > 0) return Results.BadRequest(new { message = "Já avaliou este trabalho." });
+
+    Database.ExecuteNonQuery(
+        @"INSERT INTO reviews (job_id, from_user_id, to_user_id, rating, comment, created_at)
+          VALUES (@jobId, @from, @to, @rating, @comment, @createdAt)",
+        new()
+        {
+            { "@jobId", request.JobId },
+            { "@from", userId },
+            { "@to", employerId },
+            { "@rating", Math.Clamp(request.Rating, 1.0, 5.0) },
+            { "@comment", request.Comment ?? "" },
+            { "@createdAt", DateTime.UtcNow.ToString("o") }
+        });
+
+    // Update employer's average rating
+    var ratings = Database.ExecuteQuery("SELECT AVG(rating) as avg_rating FROM reviews WHERE to_user_id = @id", new() { { "@id", employerId } });
+    if (ratings.Count > 0 && ratings[0]["avg_rating"] != null && ratings[0]["avg_rating"] != DBNull.Value)
+    {
+        double avg = Convert.ToDouble(ratings[0]["avg_rating"]);
+        Database.ExecuteNonQuery("UPDATE users SET rating = @rating WHERE id = @id", new() { { "@rating", avg }, { "@id", employerId } });
+    }
+
+    return Results.Ok(new { message = "Avaliação enviada! Obrigado pelo feedback." });
+});
+
 // --- Wallet Endpoint ---
 
 webApp.MapGet("/api/wallet", (HttpContext context) =>
@@ -1126,7 +1201,7 @@ webApp.Run();
 // --- Request records ---
 public record RegisterRequest(string Name, string Email, string Password, string Role, double Lat, double Lng, string? Bio = null, double HourlyRate = 0);
 public record LoginRequest(string Email, string Password);
-public record JobPostRequest(string Title, string Description, string Category, double Lat, double Lng, string Address, double Pay, string PayType, string Duration, string Photo);
+public record JobPostRequest(string Title, string Description, string Category, double Lat, double Lng, string Address, double Pay, string PayType, string Duration, string Photo, string? WorkDate = null);
 public record ApplyRequest(int JobId);
 public record RespondRequest(int ApplicationId, bool Accept);
 public record AvailabilityRequest(double Lat, double Lng, double Radius, string StartTime, string EndTime, double HourlyRate, bool IsActive);
@@ -1137,6 +1212,8 @@ public record EscrowRequest(int JobId, double Hours = 1.0, string? WorkDate = nu
 public record ReleasePaymentRequest(int JobId, double Rating, string Comment);
 public record AcceptWorkerRequest(int JobId, int WorkerId, bool Accept);
 public record TipRequest(int JobId, double Amount);
+public record CloseJobRequest(int JobId);
+public record WorkerReviewRequest(int JobId, double Rating, string? Comment = null);
 
 // --- Geospatial helpers ---
 public static class GeoHelper

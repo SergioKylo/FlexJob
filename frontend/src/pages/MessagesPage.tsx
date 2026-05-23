@@ -50,6 +50,11 @@ export function MessagesPage({
   const [showTipForm, setShowTipForm] = useState(false);
   const [tipAmount, setTipAmount] = useState(5);
   const [tipLoading, setTipLoading] = useState(false);
+  const [showWorkerReview, setShowWorkerReview] = useState(false);
+  const [workerReviewRating, setWorkerReviewRating] = useState(5);
+  const [workerReviewComment, setWorkerReviewComment] = useState("");
+  const [workerReviewLoading, setWorkerReviewLoading] = useState(false);
+  const [workerReviewDone, setWorkerReviewDone] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -121,6 +126,9 @@ export function MessagesPage({
     setShowRatingForm(false);
     setShowPayForm(false);
     setShowTipForm(false);
+    setShowWorkerReview(false);
+    setWorkerReviewDone(false);
+    setWorkerReviewComment("");
     if (selectedConv && selectedConv.jobId > 0) {
       api.getJobDetail(selectedConv.jobId)
         .then(setJobDetail)
@@ -177,6 +185,20 @@ export function MessagesPage({
       setMessages(data);
     } catch (err: any) {
       alert(err.message || "Erro ao responder à candidatura.");
+    }
+  }
+
+  async function handleWorkerReview() {
+    if (!jobDetail) return;
+    setWorkerReviewLoading(true);
+    try {
+      await api.workerReview(jobDetail.id, workerReviewRating, workerReviewComment);
+      setWorkerReviewDone(true);
+      setShowWorkerReview(false);
+    } catch (err: any) {
+      alert(err.message || "Erro ao enviar avaliação.");
+    } finally {
+      setWorkerReviewLoading(false);
     }
   }
 
@@ -372,7 +394,7 @@ export function MessagesPage({
                     }}
                   >
                     <CreditCard size={14} />
-                    Pagar
+                    Pagar antecipadamente
                   </button>
                 )}
               </div>
@@ -434,7 +456,7 @@ export function MessagesPage({
                       opacity: paymentLoading ? 0.6 : 1,
                     }}
                   >
-                    {paymentLoading ? "A processar..." : `Depositar €${(payHours * jobDetail!.pay).toFixed(2)} em Garantia`}
+                    {paymentLoading ? "A processar..." : `💳 Pagar Antecipadamente €${(payHours * jobDetail!.pay).toFixed(2)}`}
                   </button>
                 </div>
               )}
@@ -518,9 +540,15 @@ export function MessagesPage({
                   )}
 
                   {workerEscrow && !jobDone && (
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(255,210,51,0.1)", border: "1px solid rgba(255,210,51,0.25)", color: "var(--yellow-dark)" }}>
-                      <Lock size={16} />
-                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>€{jobDetail!.pay.toFixed(2)} em garantia · Pode iniciar o trabalho!</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", color: "#6366f1" }}>
+                      <CreditCard size={16} />
+                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>💳 Pagamento recebido antecipadamente — aguarda confirmação após o trabalho</span>
+                    </div>
+                  )}
+                  {awaitingConfirmation && !jobDone && !isEmployer && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", color: "#6366f1" }}>
+                      <CreditCard size={16} />
+                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>💳 Pagamento recebido antecipadamente — aguarda confirmação após o trabalho</span>
                     </div>
                   )}
 
@@ -541,6 +569,9 @@ export function MessagesPage({
 
                   {showRatingForm && !jobDone && (
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                      <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: "700", color: "var(--muted)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                        Avalie o trabalhador
+                      </p>
                       <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
                         {[1, 2, 3, 4, 5].map((s) => (
                           <button key={s} onClick={() => setRating(s)}
@@ -552,7 +583,7 @@ export function MessagesPage({
                       <input
                         type="text"
                         className="msg-input"
-                        placeholder="Comentário (opcional)..."
+                        placeholder="Comentário sobre o trabalhador (opcional)..."
                         value={ratingComment}
                         onChange={(e) => setRatingComment(e.target.value)}
                         style={{ width: "100%", boxSizing: "border-box" }}
@@ -564,10 +595,59 @@ export function MessagesPage({
                         </button>
                         <button onClick={handleRelease} disabled={paymentLoading}
                           style={{ flex: 2, padding: "0.55rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", cursor: "pointer", fontWeight: "700", opacity: paymentLoading ? 0.6 : 1 }}>
-                          {paymentLoading ? "A confirmar..." : "Confirmar e Pagar"}
+                          {paymentLoading ? "A confirmar..." : "Confirmar trabalho e pagar"}
                         </button>
                       </div>
                     </div>
+                  )}
+
+                  {/* Worker rates employer after job done */}
+                  {jobDone && !isEmployer && !workerReviewDone && (
+                    <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem", marginTop: "0.2rem" }}>
+                      {!showWorkerReview ? (
+                        <button
+                          onClick={() => setShowWorkerReview(true)}
+                          style={{ width: "100%", padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontWeight: "600", fontSize: "0.82rem", cursor: "pointer" }}
+                        >
+                          ⭐ Avaliar o empreendedor
+                        </button>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                          <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: "700", color: "var(--muted)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                            Como foi trabalhar com este empreendedor?
+                          </p>
+                          <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <button key={s} onClick={() => setWorkerReviewRating(s)}
+                                style={{ background: "none", border: "none", cursor: "pointer", opacity: s <= workerReviewRating ? 1 : 0.3 }}>
+                                <Star size={22} fill={s <= workerReviewRating ? "#ffd233" : "none"} color="#ffd233" />
+                              </button>
+                            ))}
+                          </div>
+                          <input
+                            type="text"
+                            className="msg-input"
+                            placeholder="Comentário (opcional)..."
+                            value={workerReviewComment}
+                            onChange={(e) => setWorkerReviewComment(e.target.value)}
+                            style={{ width: "100%", boxSizing: "border-box" }}
+                          />
+                          <div style={{ display: "flex", gap: "0.5rem" }}>
+                            <button onClick={() => setShowWorkerReview(false)}
+                              style={{ flex: 1, padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", cursor: "pointer", fontWeight: "600", fontSize: "0.82rem" }}>
+                              Cancelar
+                            </button>
+                            <button onClick={handleWorkerReview} disabled={workerReviewLoading}
+                              style={{ flex: 2, padding: "0.5rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", cursor: "pointer", fontWeight: "700", fontSize: "0.82rem", opacity: workerReviewLoading ? 0.6 : 1 }}>
+                              {workerReviewLoading ? "A enviar..." : "Enviar avaliação ⭐"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {jobDone && !isEmployer && workerReviewDone && (
+                    <p style={{ margin: "0.4rem 0 0", fontSize: "0.78rem", color: "#22c97a", fontWeight: "600", textAlign: "center" }}>✓ Avaliação enviada. Obrigado!</p>
                   )}
                 </div>
               )}

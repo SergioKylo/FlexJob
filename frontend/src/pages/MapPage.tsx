@@ -80,6 +80,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
   const [jobPay, setJobPay] = useState(12);
   const [jobAddress, setJobAddress] = useState("");
   const [jobDuration, setJobDuration] = useState("4 horas");
+  const [jobWorkDate, setJobWorkDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [jobPhoto, setJobPhoto] = useState<string>("");
   const [geocoding, setGeocoding] = useState(false);
 
@@ -209,6 +210,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
         pay: jobPay,
         payType: "hourly",
         duration: jobDuration,
+        workDate: jobWorkDate,
         photo: jobPhoto || undefined,
       });
 
@@ -220,6 +222,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
       setJobDesc("");
       setJobAddress("");
       setJobPhoto("");
+      setJobWorkDate(new Date().toISOString().split("T")[0]);
 
       // Reload jobs
       const freshJobs = await api.getJobs(user.lat, user.lng);
@@ -577,6 +580,12 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
               <label className="form-row">
                 <span>Duração Estimada</span>
                 <input required value={jobDuration} onChange={e => setJobDuration(e.target.value)} placeholder="Ex: 4 horas, 2 dias" />
+              </label>
+            </div>
+            <div className="form-grid" style={{ marginBottom: "10px" }}>
+              <label className="form-row">
+                <span>Dia do trabalho</span>
+                <input type="date" required value={jobWorkDate} min={new Date().toISOString().split("T")[0]} onChange={e => setJobWorkDate(e.target.value)} />
               </label>
             </div>
             

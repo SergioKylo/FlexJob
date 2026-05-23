@@ -105,6 +105,7 @@ export const api = {
     payType: string;
     duration: string;
     photo?: string;
+    workDate?: string;
   }): Promise<{ message: string }> {
     return request<{ message: string }>("/api/jobs", {
       method: "POST",
@@ -237,6 +238,20 @@ export const api = {
     return request<{ message: string }>("/api/payments/tip", {
       method: "POST",
       body: { jobId, amount } as any,
+    });
+  },
+
+  async workerReview(jobId: number, rating: number, comment: string): Promise<{ message: string }> {
+    return request<{ message: string }>("/api/payments/worker-review", {
+      method: "POST",
+      body: { jobId, rating, comment } as any,
+    });
+  },
+
+  async closeJob(jobId: number): Promise<{ message: string }> {
+    return request<{ message: string }>("/api/jobs/close", {
+      method: "POST",
+      body: { jobId } as any,
     });
   },
 
