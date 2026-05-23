@@ -72,7 +72,7 @@ webApp.MapPost("/api/auth/register", async (HttpContext context, RegisterRequest
     try
     {
         Database.ExecuteNonQuery(
-            @"INSERT INTO users (name, email, password_hash, role, avatar, bio, rating, location_lat, location_lng, created_at) 
+            @"INSERT INTO users (name, email, password_hash, role, avatar, bio, rating, location_lat, location_lng, created_at)
               VALUES (@name, @email, @hash, @role, @avatar, @bio, 5.0, @lat, @lng, @created_at)",
             new()
             {
@@ -81,11 +81,26 @@ webApp.MapPost("/api/auth/register", async (HttpContext context, RegisterRequest
                 { "@hash", passwordHash },
                 { "@role", request.Role },
                 { "@avatar", $"https://api.dicebear.com/7.x/bottts/svg?seed={Uri.EscapeDataString(request.Name)}" },
-                { "@bio", "" },
+                { "@bio", request.Bio ?? "" },
                 { "@lat", request.Lat },
                 { "@lng", request.Lng },
                 { "@created_at", createdAt }
             });
+
+        // If worker with hourly rate, create availability entry
+        if (request.Role == "worker" && request.HourlyRate > 0)
+        {
+            var newUser = Database.ExecuteQuery("SELECT id FROM users WHERE email = @email", new() { { "@email", request.Email } });
+            if (newUser.Count > 0)
+            {
+                var newUserId = Convert.ToInt32(newUser[0]["id"]);
+                Database.ExecuteNonQuery(
+                    @"INSERT INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active)
+                      VALUES (@workerId, @lat, @lng, 10.0, '09:00', '18:00', @hourlyRate, 1)
+                      ON DUPLICATE KEY UPDATE hourly_rate = @hourlyRate",
+                    new() { { "@workerId", newUserId }, { "@lat", request.Lat }, { "@lng", request.Lng }, { "@hourlyRate", request.HourlyRate } });
+            }
+        }
 
         return Results.Ok(new { message = "Conta criada com sucesso!" });
     }
@@ -393,7 +408,7 @@ webApp.MapPost("/api/jobs/apply", (HttpContext context, ApplyRequest request) =>
         return Results.Json(new { message = "Apenas trabalhadores podem candidatar-se a tarefas." }, statusCode: 403);
     }
 
-    var jobs = Database.ExecuteQuery("SELECT status, employer_id FROM jobs WHERE id = @id", new() { { "@id", request.JobId } });
+    var jobs = Database.ExecuteQuery("SELECT status, employer_id, title FROM jobs WHERE id = @id", new() { { "@id", request.JobId } });
     if (jobs.Count == 0) return Results.NotFound(new { message = "Tarefa não encontrada." });
 
     var job = jobs[0];
@@ -415,11 +430,20 @@ webApp.MapPost("/api/jobs/apply", (HttpContext context, ApplyRequest request) =>
                 { "@createdAt", createdAt }
             });
 
-        // Send application notification to employer
+        // Send application notification to employer (include worker profile info)
         var employerId = Convert.ToInt32(job["employer_id"]);
-        var workerRows = Database.ExecuteQuery("SELECT name FROM users WHERE id = @id", new() { { "@id", userId } });
-        var workerName = workerRows.Count > 0 ? workerRows[0]["name"]?.ToString() : "Trabalhador";
         var jobTitle = job["title"]?.ToString();
+        var workerDetails = Database.ExecuteQuery(
+            "SELECT u.name, u.bio, u.rating, a.hourly_rate FROM users u LEFT JOIN availabilities a ON u.id = a.worker_id WHERE u.id = @id",
+            new() { { "@id", userId } });
+        var wd = workerDetails.Count > 0 ? workerDetails[0] : null;
+        var workerName = wd?["name"]?.ToString() ?? "Trabalhador";
+        var workerBio = wd?["bio"]?.ToString() ?? "";
+        var workerRating = wd != null && wd["rating"] != null ? Convert.ToDouble(wd["rating"]) : 5.0;
+        var hourlyRate = wd != null && wd["hourly_rate"] != null && wd["hourly_rate"] != DBNull.Value ? Convert.ToDouble(wd["hourly_rate"]) : 0.0;
+        var rateInfo = hourlyRate > 0 ? $" · €{hourlyRate:F2}/h" : "";
+        var bioInfo = !string.IsNullOrWhiteSpace(workerBio) ? $"\n📝 {workerBio}" : "";
+        var applyContent = $"📋 Candidatura de {workerName}\n⭐ {workerRating:F1}/5{rateInfo}{bioInfo}\nVaga: \"{jobTitle}\"";
 
         Database.ExecuteNonQuery(
             @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
@@ -429,7 +453,7 @@ webApp.MapPost("/api/jobs/apply", (HttpContext context, ApplyRequest request) =>
                 { "@from", userId },
                 { "@to", employerId },
                 { "@jobId", request.JobId },
-                { "@content", $"📋 {workerName} candidatou-se à sua vaga \"{jobTitle}\". Clique para ver o perfil e responder." },
+                { "@content", applyContent },
                 { "@createdAt2", DateTime.UtcNow.ToString("o") }
             });
 
@@ -852,9 +876,17 @@ webApp.MapPost("/api/payments/escrow", (HttpContext context, EscrowRequest reque
     if (workerId == null)
         return Results.BadRequest(new { message = "Ainda não há trabalhador atribuído. Aceite primeiro uma candidatura." });
 
-    var pay = Convert.ToDouble(job["pay"]);
+    var hourlyRate = Convert.ToDouble(job["pay"]);
+    var hours = request.Hours > 0 ? request.Hours : 1.0;
+    var amount = hours * hourlyRate;
 
-    Database.ExecuteNonQuery("UPDATE jobs SET payment_status = 'escrowed' WHERE id = @jobId", new() { { "@jobId", request.JobId } });
+    Database.ExecuteNonQuery(
+        "UPDATE jobs SET payment_status = 'escrowed', payment_amount = @amount WHERE id = @jobId",
+        new() { { "@jobId", request.JobId }, { "@amount", amount } });
+
+    var dateInfo = !string.IsNullOrWhiteSpace(request.WorkDate) ? $" para {request.WorkDate}" : "";
+    var notesInfo = !string.IsNullOrWhiteSpace(request.Notes) ? $"\n📝 {request.Notes}" : "";
+    var escrowContent = $"💰 €{amount:F2} depositados em garantia ({hours}h × €{hourlyRate:F2}/h){dateInfo}. Pode iniciar o trabalho!{notesInfo}";
 
     Database.ExecuteNonQuery(
         @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
@@ -864,11 +896,11 @@ webApp.MapPost("/api/payments/escrow", (HttpContext context, EscrowRequest reque
             { "@from", userId },
             { "@to", workerId },
             { "@jobId", request.JobId },
-            { "@content", $"💰 Pagamento de €{pay:F2} depositado em garantia. Pode iniciar o trabalho!" },
+            { "@content", escrowContent },
             { "@createdAt", DateTime.UtcNow.ToString("o") }
         });
 
-    return Results.Ok(new { message = "Pagamento depositado em garantia com sucesso!", amount = pay });
+    return Results.Ok(new { message = "Pagamento depositado em garantia com sucesso!", amount });
 });
 
 webApp.MapPost("/api/payments/release", (HttpContext context, ReleasePaymentRequest request) =>
@@ -892,7 +924,8 @@ webApp.MapPost("/api/payments/release", (HttpContext context, ReleasePaymentRequ
         return Results.BadRequest(new { message = "O pagamento em garantia ainda não foi efetuado." });
 
     var workerId = Convert.ToInt32(job["worker_id"]);
-    var pay = Convert.ToDouble(job["pay"]);
+    var paymentAmountRaw = job.ContainsKey("payment_amount") && job["payment_amount"] != null && job["payment_amount"] != DBNull.Value ? Convert.ToDouble(job["payment_amount"]) : 0;
+    var pay = paymentAmountRaw > 0 ? paymentAmountRaw : Convert.ToDouble(job["pay"]);
 
     Database.ExecuteNonQuery(
         "UPDATE jobs SET status = 'completed', payment_status = 'released' WHERE id = @jobId",
@@ -990,7 +1023,7 @@ webApp.MapGet("/api/wallet", (HttpContext context) =>
 webApp.Run();
 
 // --- Request records ---
-public record RegisterRequest(string Name, string Email, string Password, string Role, double Lat, double Lng);
+public record RegisterRequest(string Name, string Email, string Password, string Role, double Lat, double Lng, string? Bio = null, double HourlyRate = 0);
 public record LoginRequest(string Email, string Password);
 public record JobPostRequest(string Title, string Description, string Category, double Lat, double Lng, string Address, double Pay, string PayType, string Duration, string Photo);
 public record ApplyRequest(int JobId);
@@ -999,7 +1032,7 @@ public record AvailabilityRequest(double Lat, double Lng, double Radius, string 
 public record MessageRequest(int ToUserId, int? JobId, string Content);
 public record ProfileUpdateRequest(string Name, string Bio);
 public record CompleteJobRequest(int JobId, double Rating, string Comment);
-public record EscrowRequest(int JobId);
+public record EscrowRequest(int JobId, double Hours = 1.0, string? WorkDate = null, string? Notes = null);
 public record ReleasePaymentRequest(int JobId, double Rating, string Comment);
 
 // --- Geospatial helpers ---

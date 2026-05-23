@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star } from "lucide-react";
+import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star, CreditCard, X } from "lucide-react";
 import { api } from "../utils/api";
 import type { ChatMessage, InboxConversation, User } from "../types";
 
@@ -43,6 +43,10 @@ export function MessagesPage({
   const [rating, setRating] = useState(5);
   const [ratingComment, setRatingComment] = useState("");
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const [showPayForm, setShowPayForm] = useState(false);
+  const [payHours, setPayHours] = useState(1);
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [payNotes, setPayNotes] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,6 +116,7 @@ export function MessagesPage({
   useEffect(() => {
     setJobDetail(null);
     setShowRatingForm(false);
+    setShowPayForm(false);
     if (selectedConv && selectedConv.jobId > 0) {
       api.getJobDetail(selectedConv.jobId)
         .then(setJobDetail)
@@ -142,9 +147,11 @@ export function MessagesPage({
     if (!jobDetail) return;
     setPaymentLoading(true);
     try {
-      await api.escrowPayment(jobDetail.id);
+      await api.escrowPayment(jobDetail.id, payHours, payDate, payNotes);
       const updated = await api.getJobDetail(jobDetail.id);
       setJobDetail(updated);
+      setShowPayForm(false);
+      setPayNotes("");
       const jobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
       const data = await api.getMessages(selectedConv!.partnerId, jobId);
       setMessages(data);
@@ -196,7 +203,7 @@ export function MessagesPage({
   const awaitingConfirmation = isEmployer && jobDetail && jobDetail.paymentStatus === "escrowed";
   const workerEscrow = !isEmployer && jobDetail && jobDetail.paymentStatus === "escrowed";
   const jobDone = jobDetail && jobDetail.paymentStatus === "released";
-  const showPaymentBar = !!(canPay || awaitingConfirmation || workerEscrow || jobDone);
+  const showPaymentBar = !!(awaitingConfirmation || workerEscrow || jobDone);
 
   return (
     <div className="msg-shell">
@@ -319,7 +326,84 @@ export function MessagesPage({
                     {selectedConv.partnerRole}
                   </span>
                 )}
+                {canPay && (
+                  <button
+                    onClick={() => setShowPayForm((v) => !v)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "0.35rem",
+                      padding: "0.4rem 0.8rem", borderRadius: "10px", border: "none",
+                      background: showPayForm ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "linear-gradient(135deg, #22c97a, #16a361)",
+                      color: "#fff", fontSize: "0.78rem", fontWeight: "700", cursor: "pointer",
+                      flexShrink: 0, transition: "background 0.15s",
+                    }}
+                  >
+                    <CreditCard size={14} />
+                    Pagar
+                  </button>
+                )}
               </div>
+
+              {/* ── Payment form panel ── */}
+              {showPayForm && canPay && (
+                <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--line)", background: "var(--surface2)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+                    <h4 style={{ margin: 0, fontSize: "0.85rem", fontWeight: "700", color: "var(--ink)" }}>
+                      💳 Depositar pagamento em garantia
+                    </h4>
+                    <button onClick={() => setShowPayForm(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "0.2rem" }}>
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem", marginBottom: "0.6rem" }}>
+                    <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                      <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Horas</span>
+                      <input
+                        type="number"
+                        min={0.5}
+                        step={0.5}
+                        value={payHours}
+                        onChange={(e) => setPayHours(parseFloat(e.target.value) || 1)}
+                        className="msg-input"
+                        style={{ padding: "0.5rem 0.7rem" }}
+                      />
+                    </label>
+                    <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                      <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Data do trabalho</span>
+                      <input
+                        type="date"
+                        value={payDate}
+                        onChange={(e) => setPayDate(e.target.value)}
+                        className="msg-input"
+                        style={{ padding: "0.5rem 0.7rem" }}
+                      />
+                    </label>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.6rem 0.8rem", borderRadius: "8px", background: "rgba(34,201,122,0.08)", border: "1px solid rgba(34,201,122,0.2)", marginBottom: "0.6rem" }}>
+                    <span style={{ fontSize: "0.82rem", color: "var(--muted)" }}>{payHours}h × €{jobDetail!.pay.toFixed(2)}/h =</span>
+                    <strong style={{ fontSize: "1.1rem", color: "#22c97a" }}>€{(payHours * jobDetail!.pay).toFixed(2)}</strong>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Notas para o trabalhador (opcional)..."
+                    value={payNotes}
+                    onChange={(e) => setPayNotes(e.target.value)}
+                    className="msg-input"
+                    style={{ width: "100%", boxSizing: "border-box", marginBottom: "0.6rem", padding: "0.5rem 0.7rem" }}
+                  />
+                  <button
+                    onClick={handleEscrow}
+                    disabled={paymentLoading}
+                    style={{
+                      width: "100%", padding: "0.65rem", borderRadius: "10px", border: "none",
+                      background: "linear-gradient(135deg, #22c97a, #16a361)", color: "#fff",
+                      fontWeight: "700", fontSize: "0.88rem", cursor: "pointer",
+                      opacity: paymentLoading ? 0.6 : 1,
+                    }}
+                  >
+                    {paymentLoading ? "A processar..." : `Depositar €${(payHours * jobDetail!.pay).toFixed(2)} em Garantia`}
+                  </button>
+                </div>
+              )}
 
               {/* Messages area */}
               <div className="msg-chat-area">
@@ -355,23 +439,6 @@ export function MessagesPage({
                       <Lock size={16} />
                       <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>€{jobDetail!.pay.toFixed(2)} em garantia · Pode iniciar o trabalho!</span>
                     </div>
-                  )}
-
-                  {canPay && !awaitingConfirmation && !jobDone && (
-                    <button
-                      onClick={handleEscrow}
-                      disabled={paymentLoading}
-                      style={{
-                        width: "100%", padding: "0.6rem 1rem", borderRadius: "10px", border: "none",
-                        background: "linear-gradient(135deg, #22c97a, #16a361)", color: "#fff",
-                        fontWeight: "700", fontSize: "0.88rem", cursor: "pointer",
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: "0.5rem",
-                        opacity: paymentLoading ? 0.6 : 1,
-                      }}
-                    >
-                      <Lock size={15} />
-                      {paymentLoading ? "A processar..." : `Depositar €${jobDetail!.pay.toFixed(2)} em Garantia`}
-                    </button>
                   )}
 
                   {awaitingConfirmation && !jobDone && !showRatingForm && (

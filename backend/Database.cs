@@ -157,6 +157,7 @@ public static class Database
         // Schema migrations — safe to fail if columns already exist
         try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN wallet_balance DOUBLE NOT NULL DEFAULT 0"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_status VARCHAR(50) NOT NULL DEFAULT 'none'"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_amount DOUBLE NOT NULL DEFAULT 0"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE messages ADD COLUMN message_type VARCHAR(50) NOT NULL DEFAULT 'text'"); } catch { }
 
         // Seed mock data if database is empty

@@ -37,10 +37,10 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
 export const api = {
   // Auth
-  async register(name: string, email: string, role: UserRole, lat: number, lng: number): Promise<{ message: string }> {
+  async register(name: string, email: string, role: UserRole, lat: number, lng: number, bio?: string, hourlyRate?: number): Promise<{ message: string }> {
     return request<{ message: string }>("/api/auth/register", {
       method: "POST",
-      body: { name, email, password: "123456", role, lat, lng } as any, // hardcoding a simple password in register for this demo
+      body: { name, email, password: "123456", role, lat, lng, bio: bio ?? "", hourlyRate: hourlyRate ?? 0 } as any,
     });
   },
 
@@ -218,8 +218,8 @@ export const api = {
   },
 
   // Payments
-  async escrowPayment(jobId: number): Promise<{ message: string; amount: number }> {
-    return request<any>("/api/payments/escrow", { method: "POST", body: { jobId } as any });
+  async escrowPayment(jobId: number, hours: number, workDate: string, notes: string): Promise<{ message: string; amount: number }> {
+    return request<any>("/api/payments/escrow", { method: "POST", body: { jobId, hours, workDate, notes } as any });
   },
 
   async releasePayment(jobId: number, rating: number, comment: string): Promise<{ message: string; amount: number }> {

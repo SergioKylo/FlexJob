@@ -72,25 +72,25 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat }: JobsPag
         <p style={{ color: "#6366f1", letterSpacing: "1px", textTransform: "uppercase", fontSize: "0.75rem", fontWeight: "600", margin: "0 0 0.4rem" }}>
           Trabalhos próximos de si
         </p>
-        <h2 style={{ fontSize: "1.75rem", fontWeight: "700", color: "#fff", margin: "0 0 0.5rem" }}>
+        <h2 style={{ fontSize: "1.75rem", fontWeight: "700", color: "var(--ink)", margin: "0 0 0.5rem" }}>
           Oportunidades disponíveis
         </h2>
-        <p style={{ color: "rgba(255,255,255,0.5)", margin: 0, fontSize: "0.9rem" }}>
+        <p style={{ color: "var(--muted)", margin: 0, fontSize: "0.9rem" }}>
           {filtered.length} vaga{filtered.length !== 1 ? "s" : ""} encontrada{filtered.length !== 1 ? "s" : ""} · ordenadas por {SORT_OPTIONS.find(s => s.key === sortKey)?.label.toLowerCase()}
         </p>
       </div>
 
       {/* Search + filters */}
-      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px", padding: "1rem", marginBottom: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "12px", padding: "1rem", marginBottom: "1.5rem", display: "flex", flexDirection: "column", gap: "1rem" }}>
         {/* Search */}
         <div style={{ position: "relative" }}>
-          <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.35)" }} />
+          <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
           <input
             type="text"
             placeholder="Pesquisar por título, empresa ou descrição..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: "100%", padding: "0.7rem 0.75rem 0.7rem 2.4rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#fff", fontSize: "0.9rem", outline: "none", boxSizing: "border-box" }}
+            style={{ width: "100%", padding: "0.7rem 0.75rem 0.7rem 2.4rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.9rem", outline: "none", boxSizing: "border-box" }}
           />
         </div>
 
@@ -104,9 +104,9 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat }: JobsPag
                 style={{
                   padding: "0.4rem 0.9rem",
                   borderRadius: "20px",
-                  border: selectedCategory === cat.value ? "1px solid #6366f1" : "1px solid rgba(255,255,255,0.1)",
-                  background: selectedCategory === cat.value ? "#6366f1" : "rgba(255,255,255,0.04)",
-                  color: "#fff",
+                  border: selectedCategory === cat.value ? "1px solid #6366f1" : "1px solid var(--line)",
+                  background: selectedCategory === cat.value ? "#6366f1" : "var(--surface2)",
+                  color: selectedCategory === cat.value ? "#fff" : "var(--ink)",
                   cursor: "pointer",
                   fontSize: "0.82rem",
                   fontWeight: selectedCategory === cat.value ? "600" : "400",
@@ -132,9 +132,9 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat }: JobsPag
                     gap: "0.25rem",
                     padding: "0.4rem 0.8rem",
                     borderRadius: "8px",
-                    border: active ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.08)",
-                    background: active ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.03)",
-                    color: active ? "#a5b4fc" : "rgba(255,255,255,0.5)",
+                    border: active ? "1px solid rgba(99,102,241,0.5)" : "1px solid var(--line)",
+                    background: active ? "rgba(99,102,241,0.15)" : "var(--surface2)",
+                    color: active ? "#a5b4fc" : "var(--muted)",
                     cursor: "pointer",
                     fontSize: "0.8rem",
                     fontWeight: active ? "600" : "400",
@@ -169,8 +169,8 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat }: JobsPag
         })}
 
         {filtered.length === 0 && (
-          <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "3rem 1rem", background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: "12px" }}>
-            <p style={{ color: "rgba(255,255,255,0.4)", margin: 0 }}>Nenhuma vaga encontrada com os filtros atuais.</p>
+          <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "3rem 1rem", background: "var(--surface)", border: "1px dashed var(--line)", borderRadius: "12px" }}>
+            <p style={{ color: "var(--muted)", margin: 0 }}>Nenhuma vaga encontrada com os filtros atuais.</p>
           </div>
         )}
       </div>
@@ -202,8 +202,8 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
   return (
     <article
       style={{
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "var(--surface)",
+        border: "1px solid var(--line)",
         borderRadius: "16px",
         overflow: "hidden",
         display: "flex",
@@ -212,8 +212,8 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
         cursor: "pointer",
       }}
       onClick={onOpen}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.borderColor = "rgba(99,102,241,0.35)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
+      onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.borderColor = "rgba(99,102,241,0.5)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.borderColor = "var(--line)"; }}
     >
       {/* Image / placeholder */}
       <div style={{ position: "relative", height: "150px", background: job.photo ? "transparent" : meta.gradient, flexShrink: 0 }}>
@@ -250,11 +250,11 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
           <img
             src={`https://api.dicebear.com/7.x/bottts/svg?seed=${job.requester}`}
             alt={job.requester}
-            style={{ width: "32px", height: "32px", borderRadius: "50%", background: "rgba(255,255,255,0.06)", padding: "2px", flexShrink: 0 }}
+            style={{ width: "32px", height: "32px", borderRadius: "50%", background: "var(--surface2)", padding: "2px", flexShrink: 0 }}
           />
           <div style={{ minWidth: 0 }}>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "rgba(255,255,255,0.45)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.requester}</p>
-            <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: "700", color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.title}</h3>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.requester}</p>
+            <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: "700", color: "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.title}</h3>
           </div>
         </div>
 
@@ -264,7 +264,7 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
             <Star size={12} fill="#facc15" />
             {job.rating.toFixed(1)}
           </span>
-          <span style={{ color: "rgba(255,255,255,0.45)", display: "flex", alignItems: "center", gap: "0.2rem" }}>
+          <span style={{ color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.2rem" }}>
             <Clock size={12} />
             {job.hours}h · {job.time}
           </span>
@@ -274,13 +274,13 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
         </div>
 
         {/* Location */}
-        <p style={{ margin: 0, fontSize: "0.8rem", color: "rgba(255,255,255,0.4)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+        <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)", display: "flex", alignItems: "center", gap: "0.3rem" }}>
           <MapPin size={12} style={{ color: "#6366f1", flexShrink: 0 }} />
           {job.address || job.city}
         </p>
 
         {/* Description */}
-        <p style={{ margin: 0, fontSize: "0.83rem", color: "rgba(255,255,255,0.6)", lineHeight: "1.5", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+        <p style={{ margin: 0, fontSize: "0.83rem", color: "var(--muted)", lineHeight: "1.5", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
           {job.description}
         </p>
 
@@ -302,9 +302,9 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
           )}
           <button
             onClick={() => onChat()}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem", padding: "0.6rem 0.9rem", borderRadius: "10px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "#fff", fontSize: "0.82rem", fontWeight: "600", cursor: "pointer", transition: "background 0.15s", whiteSpace: "nowrap" }}
-            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
-            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.35rem", padding: "0.6rem 0.9rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.82rem", fontWeight: "600", cursor: "pointer", transition: "background 0.15s", whiteSpace: "nowrap" }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = "0.75"}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
           >
             <MessageSquare size={14} />
             Contactar
@@ -332,7 +332,7 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
       onClick={onClose}
     >
       <div
-        style={{ width: "100%", maxWidth: "460px", height: "100%", background: "#1a1a1a", borderLeft: "1px solid rgba(255,255,255,0.1)", overflowY: "auto", display: "flex", flexDirection: "column" }}
+        style={{ width: "100%", maxWidth: "460px", height: "100%", background: "var(--surface)", borderLeft: "1px solid var(--line)", overflowY: "auto", display: "flex", flexDirection: "column" }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Hero */}
@@ -368,11 +368,11 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
             <img
               src={`https://api.dicebear.com/7.x/bottts/svg?seed=${job.requester}`}
               alt={job.requester}
-              style={{ width: "44px", height: "44px", borderRadius: "50%", background: "rgba(255,255,255,0.06)", padding: "2px", flexShrink: 0 }}
+              style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--surface2)", padding: "2px", flexShrink: 0 }}
             />
             <div>
-              <p style={{ margin: 0, fontSize: "0.82rem", color: "rgba(255,255,255,0.45)" }}>{job.requester}</p>
-              <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "700", color: "#fff" }}>{job.title}</h2>
+              <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--muted)" }}>{job.requester}</p>
+              <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: "700", color: "var(--ink)" }}>{job.title}</h2>
             </div>
           </div>
 
@@ -380,31 +380,31 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
             {[
               { label: "Pagamento", value: `€${job.pay}/h`, color: "#a5b4fc" },
-              { label: "Duração", value: `${job.hours}h`, color: "#fff" },
+              { label: "Duração", value: `${job.hours}h`, color: "var(--ink)" },
               { label: "Avaliação", value: `★ ${job.rating.toFixed(1)}`, color: "#facc15" },
             ].map((stat) => (
-              <div key={stat.label} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "10px", padding: "0.75rem", textAlign: "center" }}>
-                <small style={{ color: "rgba(255,255,255,0.4)", display: "block", fontSize: "0.7rem", marginBottom: "0.2rem" }}>{stat.label}</small>
+              <div key={stat.label} style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.75rem", textAlign: "center" }}>
+                <small style={{ color: "var(--muted)", display: "block", fontSize: "0.7rem", marginBottom: "0.2rem" }}>{stat.label}</small>
                 <strong style={{ color: stat.color, fontSize: "1rem" }}>{stat.value}</strong>
               </div>
             ))}
           </div>
 
           {/* Location */}
-          <div style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "10px", padding: "0.9rem" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem", background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.9rem" }}>
             <MapPin size={16} style={{ color: "#6366f1", flexShrink: 0, marginTop: "2px" }} />
             <div>
-              <small style={{ color: "rgba(255,255,255,0.4)", display: "block", fontSize: "0.72rem" }}>Morada</small>
-              <span style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.9rem" }}>{job.address || job.city}</span>
+              <small style={{ color: "var(--muted)", display: "block", fontSize: "0.72rem" }}>Morada</small>
+              <span style={{ color: "var(--ink)", fontSize: "0.9rem" }}>{job.address || job.city}</span>
               <br />
-              <small style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.75rem" }}>a {job.distance} km de si · início às {job.time}</small>
+              <small style={{ color: "var(--muted)", fontSize: "0.75rem" }}>a {job.distance} km de si · início às {job.time}</small>
             </div>
           </div>
 
           {/* Description */}
           <div>
-            <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "rgba(255,255,255,0.35)" }}>Descrição da Vaga</h4>
-            <p style={{ margin: 0, color: "rgba(255,255,255,0.8)", fontSize: "0.9rem", lineHeight: "1.65", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px", padding: "0.9rem", whiteSpace: "pre-wrap" }}>
+            <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>Descrição da Vaga</h4>
+            <p style={{ margin: 0, color: "var(--ink)", fontSize: "0.9rem", lineHeight: "1.65", background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.9rem", whiteSpace: "pre-wrap" }}>
               {job.description}
             </p>
           </div>
@@ -427,9 +427,9 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
             )}
             <button
               onClick={onChat}
-              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.6rem", width: "100%", padding: "0.9rem", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)", color: "#fff", fontWeight: "700", fontSize: "1rem", cursor: "pointer", transition: "background 0.15s" }}
-              onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.09)"}
-              onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.6rem", width: "100%", padding: "0.9rem", borderRadius: "12px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontWeight: "700", fontSize: "1rem", cursor: "pointer", transition: "opacity 0.15s" }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = "0.75"}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
             >
               <MessageSquare size={18} />
               Enviar Mensagem ao Empregador

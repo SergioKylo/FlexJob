@@ -35,6 +35,8 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
   const [email, setEmail]       = useState("maria@email.com");
   const [role, setRole]         = useState<UserRole>("worker");
   const [region, setRegion]     = useState("Lisboa");
+  const [bio, setBio]           = useState("");
+  const [hourlyRate, setHourlyRate] = useState(10);
   const [error, setError]       = useState<string | null>(null);
   const [loading, setLoading]   = useState(false);
 
@@ -45,7 +47,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
     try {
       if (authMode === "signup") {
         const selectedRegion = REGIONS.find((r) => r.name === region) || REGIONS[0];
-        await api.register(name, email, role, selectedRegion.lat, selectedRegion.lng);
+        await api.register(name, email, role, selectedRegion.lat, selectedRegion.lng, bio, role === "worker" ? hourlyRate : 0);
         const loggedInUser = await api.login(email);
         onLogin(loggedInUser);
       } else {
@@ -94,9 +96,9 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
               { value: "7 min",  label: "Média para Match" },
               { value: "4.9 ★",  label: "Satisfação Geral" },
             ].map((s) => (
-              <div key={s.label} style={{ padding: "1rem", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "14px", background: "rgba(255,255,255,0.04)" }}>
-                <strong style={{ fontSize: "1.3rem", display: "block", color: "#f0f0ed" }}>{s.value}</strong>
-                <small style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.78rem" }}>{s.label}</small>
+              <div key={s.label} style={{ padding: "1rem", border: "1px solid var(--line)", borderRadius: "14px", background: "var(--surface2)" }}>
+                <strong style={{ fontSize: "1.3rem", display: "block", color: "var(--ink)" }}>{s.value}</strong>
+                <small style={{ color: "var(--muted)", fontSize: "0.78rem" }}>{s.label}</small>
               </div>
             ))}
           </div>
@@ -148,22 +150,70 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
             </label>
 
             {authMode === "signup" && (
-              <div className="role-grid" style={{ margin: "0.5rem 0" }}>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                  <input type="radio" checked={role === "worker"} onChange={() => setRole("worker")} style={{ accentColor: "#ffd233" }} />
-                  💼 Trabalhador
+              <>
+                <div className="role-grid" style={{ margin: "0.5rem 0" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                    <input type="radio" checked={role === "worker"} onChange={() => setRole("worker")} style={{ accentColor: "#ffd233" }} />
+                    💼 Trabalhador
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
+                    <input type="radio" checked={role === "employer"} onChange={() => setRole("employer")} style={{ accentColor: "#ffd233" }} />
+                    🏢 Empreendedor
+                  </label>
+                </div>
+                <label className="form-row">
+                  <span>{role === "worker" ? "Sobre mim / Bio" : "Descrição da empresa"}</span>
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder={role === "worker" ? "Ex: Experiente em restauração e eventos, disponível imediatamente..." : "Ex: Café familiar no centro de Lisboa, procuramos profissionais de atendimento..."}
+                    rows={2}
+                    style={{ resize: "vertical", fontFamily: "inherit", fontSize: "0.9rem" }}
+                  />
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                  <input type="radio" checked={role === "employer"} onChange={() => setRole("employer")} style={{ accentColor: "#ffd233" }} />
-                  🏢 Empreendedor
-                </label>
-              </div>
+                {role === "worker" && (
+                  <label className="form-row">
+                    <span>Taxa horária (€/h)</span>
+                    <input
+                      type="number"
+                      min={5}
+                      max={200}
+                      step={0.5}
+                      value={hourlyRate}
+                      onChange={(e) => setHourlyRate(parseFloat(e.target.value) || 10)}
+                    />
+                  </label>
+                )}
+              </>
             )}
 
             <button className="primary full" type="submit" disabled={loading}>
               {loading ? "A entrar..." : t("enterApp")}
             </button>
             <p className="auth-note" style={{ textAlign: "center", marginTop: "0.25rem" }}>{t("localDemo")}</p>
+
+            {/* Demo accounts */}
+            <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "rgba(255,210,51,0.07)", border: "1px solid rgba(255,210,51,0.2)", borderRadius: "10px" }}>
+              <p style={{ margin: "0 0 0.5rem", fontSize: "0.7rem", fontWeight: "700", color: "var(--yellow-dark)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Contas de demonstração (senha: 123456)
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem" }}>
+                {[
+                  { label: "💼 Trabalhadora", email: "ines@email.com" },
+                  { label: "🏢 Empregador", email: "cafeaurora@email.com" },
+                ].map((acc) => (
+                  <button
+                    key={acc.email}
+                    type="button"
+                    onClick={() => { setEmail(acc.email); setAuthMode("login"); }}
+                    style={{ padding: "0.45rem 0.6rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: "0.75rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s" }}
+                  >
+                    <strong style={{ display: "block", fontSize: "0.78rem" }}>{acc.label}</strong>
+                    <small style={{ color: "var(--muted)" }}>{acc.email}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
           </form>
         </aside>
       </main>
@@ -178,7 +228,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
           {HOW_IT_WORKS.map((item) => (
             <div
               key={item.step}
-              style={{ padding: "1.5rem", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.03)", position: "relative", overflow: "hidden" }}
+              style={{ padding: "1.5rem", borderRadius: "16px", border: "1px solid var(--line)", background: "var(--surface)", position: "relative", overflow: "hidden" }}
             >
               <div style={{ fontSize: "2.5rem", fontWeight: "900", color: item.accent, opacity: 0.15, position: "absolute", top: "0.5rem", right: "0.75rem", lineHeight: 1 }}>
                 {item.step}
@@ -186,8 +236,8 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
               <div style={{ fontSize: "0.75rem", fontWeight: "800", color: item.accent, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "0.5rem" }}>
                 {item.step}
               </div>
-              <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "#f0f0ed", marginBottom: "0.6rem" }}>{item.title}</h3>
-              <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.5)", lineHeight: "1.55", margin: 0 }}>{item.desc}</p>
+              <h3 style={{ fontSize: "1rem", fontWeight: "700", color: "var(--ink)", marginBottom: "0.6rem" }}>{item.title}</h3>
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", lineHeight: "1.55", margin: 0 }}>{item.desc}</p>
             </div>
           ))}
         </div>
