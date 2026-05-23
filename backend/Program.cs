@@ -1135,6 +1135,8 @@ public record ProfileUpdateRequest(string Name, string Bio);
 public record CompleteJobRequest(int JobId, double Rating, string Comment);
 public record EscrowRequest(int JobId, double Hours = 1.0, string? WorkDate = null, string? Notes = null);
 public record ReleasePaymentRequest(int JobId, double Rating, string Comment);
+public record AcceptWorkerRequest(int JobId, int WorkerId, bool Accept);
+public record TipRequest(int JobId, double Amount);
 
 // --- Geospatial helpers ---
 public static class GeoHelper
