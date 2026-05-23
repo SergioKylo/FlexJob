@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Star, MessageSquare, Search, MapPin, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Star, MessageSquare, Search, MapPin, X, Clock } from "lucide-react";
 import type { Opportunity, User } from "../types";
 import { api } from "../utils/api";
 
@@ -15,244 +15,381 @@ type Review = {
   rating: number;
   comment: string;
   reviewer_name: string;
-  reviewer_avatar?: string;
   created_at: string;
 };
 
+const CATEGORIES = [
+  { value: "all",         label: "Todos" },
+  { value: "restauracao", label: "🍽️ Restauração" },
+  { value: "eventos",     label: "🎪 Eventos" },
+  { value: "logistica",   label: "📦 Logística" },
+  { value: "casa",        label: "🏠 Casa" },
+  { value: "retalho",     label: "🛍️ Retalho" },
+];
+
+type SortKey = "rating" | "pay" | "distance";
+
 export function WorkersPage({ workers, user, onStartChat }: WorkersPageProps) {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState<"rating" | "pay" | "distance">("rating");
-  const [selectedWorker, setSelectedWorker] = useState<Opportunity | null>(null);
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [loadingReviews, setLoadingReviews] = useState(false);
+  const [searchTerm, setSearchTerm]             = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [sortBy, setSortBy]                     = useState<SortKey>("rating");
+  const [selectedWorker, setSelectedWorker]     = useState<Opportunity | null>(null);
+  const [reviews, setReviews]                   = useState<Review[]>([]);
+  const [loadingReviews, setLoadingReviews]     = useState(false);
 
   useEffect(() => {
-    if (selectedWorker) {
-      setLoadingReviews(true);
-      api.getReviews(selectedWorker.id)
-        .then((data) => {
-          setReviews(data);
-          setLoadingReviews(false);
-        })
-        .catch((err) => {
-          console.error("Error fetching reviews:", err);
-          setLoadingReviews(false);
-        });
-    }
+    if (!selectedWorker) return;
+    setLoadingReviews(true);
+    api.getReviews(selectedWorker.id)
+      .then((data) => { setReviews(data); setLoadingReviews(false); })
+      .catch(() => setLoadingReviews(false));
   }, [selectedWorker]);
 
-  const filteredWorkers = workers
+  const filtered = workers
     .filter((w) => {
-      const matchName = w.title.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchBio = w.description.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchName || matchBio;
+      const q = searchTerm.toLowerCase();
+      const matchSearch = w.title.toLowerCase().includes(q) || w.description.toLowerCase().includes(q);
+      const matchCat = selectedCategory === "all" || w.type === selectedCategory;
+      return matchSearch && matchCat;
     })
     .sort((a, b) => {
-      if (sortBy === "rating") return b.rating - a.rating;
-      if (sortBy === "pay") return a.pay - b.pay; // lower price first
+      if (sortBy === "rating")   return b.rating - a.rating;
+      if (sortBy === "pay")      return a.pay - b.pay;
       if (sortBy === "distance") return a.distance - b.distance;
       return 0;
     });
 
   return (
-    <section className="screen" style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
-      <div className="screen-head" style={{ marginBottom: "2rem" }}>
-        <div>
-          <p className="eyebrow" style={{ color: "#6366f1", letterSpacing: "1px", textTransform: "uppercase" }}>Empreendedores</p>
-          <h2 style={{ fontSize: "2rem", fontWeight: "700", color: "#fff" }}>Encontre Trabalhadores Qualificados</h2>
-          <p style={{ color: "rgba(255,255,255,0.6)", marginTop: "0.5rem" }}>Disponíveis na sua região geográfica. Veja classificações e envie mensagens diretas.</p>
-        </div>
+    <section style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Header */}
+      <div style={{ marginBottom: "2rem" }}>
+        <p style={{ color: "#6366f1", letterSpacing: "1px", textTransform: "uppercase", fontSize: "0.75rem", fontWeight: "600", margin: "0 0 0.4rem" }}>
+          Empreendedores
+        </p>
+        <h2 style={{ fontSize: "1.75rem", fontWeight: "700", color: "#fff", margin: "0 0 0.5rem" }}>
+          Trabalhadores Disponíveis
+        </h2>
+        <p style={{ color: "rgba(255,255,255,0.5)", margin: 0, fontSize: "0.9rem" }}>
+          {filtered.length} trabalhador{filtered.length !== 1 ? "es" : ""} disponíve{filtered.length !== 1 ? "is" : "l"} na sua área · ordenados por {sortBy === "rating" ? "avaliação" : sortBy === "pay" ? "tarifa" : "distância"}
+        </p>
       </div>
 
-      {/* Filters bar */}
-      <div className="filters-bar" style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "2rem", background: "rgba(255,255,255,0.02)", padding: "1rem", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.08)" }}>
-        <div style={{ flex: 1, minWidth: "250px", position: "relative" }}>
-          <Search size={18} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.4)" }} />
+      {/* Filters */}
+      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "12px", padding: "1rem", marginBottom: "1.5rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+        {/* Search */}
+        <div style={{ position: "relative" }}>
+          <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.35)" }} />
           <input
             type="text"
-            placeholder="Pesquisar por nome ou bio..."
+            placeholder="Pesquisar por nome ou especialidade..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: "100%", padding: "0.75rem 0.75rem 0.75rem 2.5rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#fff", fontSize: "0.95rem" }}
+            style={{ width: "100%", padding: "0.7rem 0.75rem 0.7rem 2.4rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#fff", fontSize: "0.9rem", outline: "none", boxSizing: "border-box" }}
           />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-          <span style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.9rem" }}>Ordenar por:</span>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            style={{ padding: "0.75rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "#fff", outline: "none", cursor: "pointer" }}
-          >
-            <option value="rating" style={{ background: "#2e2e2e" }}>Melhor Classificação</option>
-            <option value="pay" style={{ background: "#2e2e2e" }}>Menor Tarifa Horária</option>
-            <option value="distance" style={{ background: "#2e2e2e" }}>Mais Próximo</option>
-          </select>
+
+        {/* Category pills + sort */}
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
+            {CATEGORIES.map((cat) => (
+              <button
+                key={cat.value}
+                onClick={() => setSelectedCategory(cat.value)}
+                style={{
+                  padding: "0.35rem 0.85rem",
+                  borderRadius: "20px",
+                  border: selectedCategory === cat.value ? "1px solid #6366f1" : "1px solid rgba(255,255,255,0.1)",
+                  background: selectedCategory === cat.value ? "#6366f1" : "rgba(255,255,255,0.04)",
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: "0.82rem",
+                  fontWeight: selectedCategory === cat.value ? "600" : "400",
+                  transition: "all 0.15s",
+                }}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ display: "flex", gap: "0.4rem" }}>
+            {(["rating", "pay", "distance"] as SortKey[]).map((key) => {
+              const labels: Record<SortKey, string> = { rating: "Avaliação", pay: "Tarifa", distance: "Distância" };
+              const active = sortBy === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSortBy(key)}
+                  style={{
+                    padding: "0.35rem 0.75rem",
+                    borderRadius: "8px",
+                    border: active ? "1px solid rgba(99,102,241,0.5)" : "1px solid rgba(255,255,255,0.08)",
+                    background: active ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.03)",
+                    color: active ? "#a5b4fc" : "rgba(255,255,255,0.5)",
+                    cursor: "pointer",
+                    fontSize: "0.8rem",
+                    fontWeight: active ? "600" : "400",
+                  }}
+                >
+                  {labels[key]}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      {/* Grid */}
-      <div className="workers-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.5rem" }}>
-        {filteredWorkers.map((worker) => (
-          <article
+      {/* Workers grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.25rem" }}>
+        {filtered.map((worker) => (
+          <WorkerCard
             key={worker.id}
-            onClick={() => setSelectedWorker(worker)}
-            style={{
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: "16px",
-              padding: "1.5rem",
-              cursor: "pointer",
-              transition: "transform 0.2s, border-color 0.2s",
-              position: "relative",
-              overflow: "hidden"
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = "translateY(-4px)";
-              e.currentTarget.style.borderColor = "rgba(99, 102, 241, 0.4)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = "translateY(0)";
-              e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
-            }}
-          >
-            <div style={{ display: "flex", gap: "1rem", alignItems: "center", marginBottom: "1rem" }}>
-              <img
-                src={`https://api.dicebear.com/7.x/bottts/svg?seed=${worker.title}`}
-                alt={worker.title}
-                style={{ width: "50px", height: "50px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", padding: "2px" }}
-              />
-              <div>
-                <h3 style={{ fontSize: "1.15rem", fontWeight: "600", color: "#fff", margin: 0 }}>{worker.title}</h3>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", color: "#f59e0b", fontSize: "0.9rem", marginTop: "0.25rem" }}>
-                  <Star size={14} fill="#f59e0b" />
-                  <span>{worker.rating.toFixed(1)}</span>
-                </div>
-              </div>
-            </div>
-
-            <p style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.85rem", height: "3rem", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", margin: "1rem 0" }}>
-              {worker.description}
-            </p>
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "1rem", marginTop: "1rem" }}>
-              <span style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
-                <MapPin size={12} /> {worker.distance} km
-              </span>
-              <span style={{ fontSize: "1.1rem", fontWeight: "bold", color: "#6366f1" }}>
-                €{worker.pay}/h
-              </span>
-            </div>
-          </article>
+            worker={worker}
+            onOpen={() => setSelectedWorker(worker)}
+            onChat={() => onStartChat(worker.id, worker.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${worker.title}`)}
+          />
         ))}
 
-        {filteredWorkers.length === 0 && (
+        {filtered.length === 0 && (
           <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "3rem", background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.1)", borderRadius: "12px" }}>
-            <p style={{ color: "rgba(255,255,255,0.5)" }}>Nenhum trabalhador disponível com os filtros atuais.</p>
+            <p style={{ color: "rgba(255,255,255,0.4)", margin: 0 }}>Nenhum trabalhador disponível com os filtros atuais.</p>
           </div>
         )}
       </div>
 
-      {/* Side Detail Modal */}
+      {/* Detail drawer */}
       {selectedWorker && (
-        <div style={{ position: "fixed", top: 0, left: 0, width: "100%", height: "100%", background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", display: "flex", justifyContent: "flex-end", zIndex: 1000 }}>
-          <div style={{ width: "100%", maxWidth: "450px", height: "100%", background: "#1f1f1f", borderLeft: "1px solid rgba(255,255,255,0.1)", padding: "2.5rem 2rem", overflowY: "auto", display: "flex", flexDirection: "column", position: "relative" }}>
-            <button
-              onClick={() => setSelectedWorker(null)}
-              style={{ position: "absolute", top: "1.5rem", right: "1.5rem", background: "rgba(255,255,255,0.05)", border: "none", color: "#fff", borderRadius: "50%", padding: "0.5rem", cursor: "pointer" }}
-            >
-              <X size={18} />
-            </button>
-
-            <div style={{ textAlign: "center", marginBottom: "2rem" }}>
-              <img
-                src={`https://api.dicebear.com/7.x/bottts/svg?seed=${selectedWorker.title}`}
-                alt={selectedWorker.title}
-                style={{ width: "90px", height: "90px", borderRadius: "50%", background: "rgba(255,255,255,0.05)", margin: "0 auto 1rem", border: "2px solid #6366f1", padding: "4px" }}
-              />
-              <h2 style={{ fontSize: "1.5rem", fontWeight: "bold", color: "#fff", marginBottom: "0.25rem" }}>{selectedWorker.title}</h2>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.25rem", color: "#f59e0b", fontSize: "1.1rem" }}>
-                <Star size={18} fill="#f59e0b" />
-                <strong>{selectedWorker.rating.toFixed(1)}</strong>
-              </div>
-              <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.85rem", marginTop: "0.5rem" }}>
-                Disponível na sua região ({selectedWorker.distance} km de distância)
-              </p>
-            </div>
-
-            <div style={{ marginBottom: "2rem" }}>
-              <h3 style={{ fontSize: "0.95rem", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", letterSpacing: "1px", marginBottom: "0.5rem" }}>Bio / Perfil</h3>
-              <p style={{ color: "rgba(255,255,255,0.85)", fontSize: "0.95rem", lineHeight: "1.6", background: "rgba(255,255,255,0.02)", padding: "1rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
-                {selectedWorker.description}
-              </p>
-            </div>
-
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "2rem" }}>
-              <div style={{ background: "rgba(255,255,255,0.02)", padding: "0.75rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
-                <small style={{ color: "rgba(255,255,255,0.4)", display: "block" }}>Tarifa Horária</small>
-                <strong style={{ fontSize: "1.2rem", color: "#6366f1" }}>€{selectedWorker.pay}/h</strong>
-              </div>
-              <div style={{ background: "rgba(255,255,255,0.02)", padding: "0.75rem", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
-                <small style={{ color: "rgba(255,255,255,0.4)", display: "block" }}>Horário Base</small>
-                <strong style={{ fontSize: "0.95rem", color: "#fff", display: "block", marginTop: "0.2rem" }}>{selectedWorker.time}</strong>
-              </div>
-            </div>
-
-            <button
-              onClick={() => {
-                onStartChat(selectedWorker.id, selectedWorker.title);
-                setSelectedWorker(null);
-              }}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "0.75rem",
-                width: "100%",
-                padding: "1rem",
-                borderRadius: "12px",
-                border: "none",
-                background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
-                color: "#fff",
-                fontWeight: "bold",
-                fontSize: "1rem",
-                cursor: "pointer",
-                boxShadow: "0 4px 15px rgba(99, 102, 241, 0.4)",
-                transition: "opacity 0.2s",
-                marginBottom: "2.5rem"
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.opacity = "0.9"}
-              onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
-            >
-              <MessageSquare size={18} />
-              Enviar Mensagem Direta
-            </button>
-
-            <div>
-              <h3 style={{ fontSize: "0.95rem", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", letterSpacing: "1px", marginBottom: "1rem" }}>Avaliações Recentes</h3>
-              {loadingReviews ? (
-                <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>A carregar avaliações...</p>
-              ) : reviews.length === 0 ? (
-                <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>Ainda não tem avaliações de outros empreendedores.</p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-                  {reviews.map((rev) => (
-                    <div key={rev.id} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "8px", padding: "1rem" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-                        <span style={{ fontWeight: "bold", color: "#fff", fontSize: "0.85rem" }}>{rev.reviewer_name}</span>
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", color: "#f59e0b", fontSize: "0.8rem" }}>
-                          <Star size={12} fill="#f59e0b" />
-                          <span>{rev.rating.toFixed(1)}</span>
-                        </div>
-                      </div>
-                      <p style={{ color: "rgba(255,255,255,0.7)", fontSize: "0.85rem", margin: 0, lineHeight: "1.4" }}>{rev.comment}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <WorkerDetailDrawer
+          worker={selectedWorker}
+          reviews={reviews}
+          loadingReviews={loadingReviews}
+          onClose={() => setSelectedWorker(null)}
+          onChat={() => {
+            onStartChat(selectedWorker.id, selectedWorker.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${selectedWorker.title}`);
+            setSelectedWorker(null);
+          }}
+        />
       )}
     </section>
+  );
+}
+
+/* ─── Worker Card ────────────────────────────────────────────────────────────── */
+
+function WorkerCard({ worker, onOpen, onChat }: {
+  worker: Opportunity;
+  onOpen: () => void;
+  onChat: () => void;
+}) {
+  return (
+    <article
+      onClick={onOpen}
+      style={{
+        background: "rgba(255,255,255,0.03)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: "16px",
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        cursor: "pointer",
+        transition: "transform 0.2s, border-color 0.2s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.borderColor = "rgba(99,102,241,0.35)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
+    >
+      {/* Top band with avatar + rating badge */}
+      <div style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.2), rgba(79,70,229,0.1))", padding: "1.5rem 1.25rem 1rem", display: "flex", alignItems: "center", gap: "1rem", position: "relative" }}>
+        <img
+          src={`https://api.dicebear.com/7.x/bottts/svg?seed=${worker.title}`}
+          alt={worker.title}
+          style={{ width: "56px", height: "56px", borderRadius: "50%", background: "rgba(255,255,255,0.08)", padding: "3px", border: "2px solid rgba(99,102,241,0.4)", flexShrink: 0 }}
+        />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3 style={{ margin: "0 0 0.2rem", fontSize: "1rem", fontWeight: "700", color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {worker.title}
+          </h3>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.82rem" }}>
+            <span style={{ color: "#facc15", display: "flex", alignItems: "center", gap: "0.2rem" }}>
+              <Star size={12} fill="#facc15" />
+              {worker.rating.toFixed(1)}
+            </span>
+            <span style={{ color: "rgba(255,255,255,0.4)" }}>·</span>
+            <span style={{ color: "rgba(255,255,255,0.45)", display: "flex", alignItems: "center", gap: "0.2rem" }}>
+              <MapPin size={11} />
+              {worker.distance} km
+            </span>
+          </div>
+        </div>
+        <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", background: "rgba(16,185,129,0.15)", color: "#10b981", fontSize: "0.68rem", fontWeight: "700", padding: "0.2rem 0.5rem", borderRadius: "6px", border: "1px solid rgba(16,185,129,0.3)" }}>
+          Disponível
+        </span>
+      </div>
+
+      {/* Body */}
+      <div style={{ padding: "1rem 1.25rem", flex: 1, display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        {/* Description */}
+        <p style={{ margin: 0, fontSize: "0.83rem", color: "rgba(255,255,255,0.6)", lineHeight: "1.5", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+          {worker.description}
+        </p>
+
+        {/* Meta row */}
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center", fontSize: "0.82rem" }}>
+          <span style={{ color: "rgba(255,255,255,0.45)", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+            <Clock size={12} />
+            {worker.time}
+          </span>
+          <span style={{ marginLeft: "auto", color: "#a5b4fc", fontWeight: "700", fontSize: "1rem" }}>
+            €{worker.pay}/h
+          </span>
+        </div>
+
+        {/* Buttons */}
+        <div style={{ display: "flex", gap: "0.6rem", marginTop: "auto" }} onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={onChat}
+            style={{
+              flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem",
+              padding: "0.6rem", borderRadius: "10px",
+              border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)",
+              color: "#fff", fontSize: "0.82rem", fontWeight: "700", cursor: "pointer",
+              transition: "opacity 0.15s",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = "0.85"}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
+          >
+            <MessageSquare size={14} />
+            Contactar
+          </button>
+          <button
+            onClick={onOpen}
+            style={{
+              padding: "0.6rem 0.9rem", borderRadius: "10px",
+              border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.05)",
+              color: "rgba(255,255,255,0.7)", fontSize: "0.82rem", cursor: "pointer",
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.1)"}
+            onMouseLeave={(e) => e.currentTarget.style.background = "rgba(255,255,255,0.05)"}
+          >
+            Ver perfil
+          </button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/* ─── Worker Detail Drawer ───────────────────────────────────────────────────── */
+
+function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat }: {
+  worker: Opportunity;
+  reviews: Review[];
+  loadingReviews: boolean;
+  onClose: () => void;
+  onChat: () => void;
+}) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)", display: "flex", justifyContent: "flex-end", zIndex: 1000 }}
+      onClick={onClose}
+    >
+      <div
+        style={{ width: "100%", maxWidth: "440px", height: "100%", background: "#1a1a1a", borderLeft: "1px solid rgba(255,255,255,0.1)", overflowY: "auto", display: "flex", flexDirection: "column" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top banner */}
+        <div style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.25), rgba(79,70,229,0.15))", padding: "2rem 1.75rem 1.5rem", position: "relative", textAlign: "center" }}>
+          <button
+            onClick={onClose}
+            style={{ position: "absolute", top: "1rem", right: "1rem", background: "rgba(255,255,255,0.08)", border: "none", color: "#fff", borderRadius: "50%", width: "34px", height: "34px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+          >
+            <X size={15} />
+          </button>
+          <img
+            src={`https://api.dicebear.com/7.x/bottts/svg?seed=${worker.title}`}
+            alt={worker.title}
+            style={{ width: "80px", height: "80px", borderRadius: "50%", background: "rgba(255,255,255,0.08)", border: "3px solid #6366f1", padding: "4px", margin: "0 auto 0.75rem" }}
+          />
+          <h2 style={{ margin: "0 0 0.3rem", fontSize: "1.3rem", fontWeight: "700", color: "#fff" }}>{worker.title}</h2>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", color: "#facc15", fontSize: "1rem" }}>
+            <Star size={16} fill="#facc15" />
+            <strong>{worker.rating.toFixed(1)}</strong>
+          </div>
+          <p style={{ margin: "0.4rem 0 0", fontSize: "0.82rem", color: "rgba(255,255,255,0.45)" }}>
+            Disponível a {worker.distance} km de si
+          </p>
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: "1.5rem 1.75rem", display: "flex", flexDirection: "column", gap: "1.25rem", flex: 1 }}>
+          {/* Stats */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+            {[
+              { label: "Tarifa", value: `€${worker.pay}/h`, color: "#a5b4fc" },
+              { label: "Horário", value: worker.time, color: "#fff" },
+            ].map((s) => (
+              <div key={s.label} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "10px", padding: "0.75rem", textAlign: "center" }}>
+                <small style={{ color: "rgba(255,255,255,0.4)", display: "block", fontSize: "0.7rem", marginBottom: "0.2rem" }}>{s.label}</small>
+                <strong style={{ color: s.color, fontSize: "0.95rem" }}>{s.value}</strong>
+              </div>
+            ))}
+          </div>
+
+          {/* Bio */}
+          <div>
+            <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "1px", color: "rgba(255,255,255,0.35)" }}>Bio / Perfil</h4>
+            <p style={{ margin: 0, color: "rgba(255,255,255,0.8)", fontSize: "0.9rem", lineHeight: "1.6", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px", padding: "0.9rem" }}>
+              {worker.description}
+            </p>
+          </div>
+
+          {/* Contact CTA */}
+          <button
+            onClick={onChat}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "0.65rem",
+              width: "100%", padding: "0.9rem", borderRadius: "12px", border: "none",
+              background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff",
+              fontWeight: "700", fontSize: "1rem", cursor: "pointer",
+              boxShadow: "0 4px 15px rgba(99,102,241,0.3)", transition: "opacity 0.15s",
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.opacity = "0.88"}
+            onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
+          >
+            <MessageSquare size={18} />
+            Enviar Mensagem Direta
+          </button>
+
+          {/* Reviews */}
+          <div>
+            <h4 style={{ margin: "0 0 0.75rem", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "1px", color: "rgba(255,255,255,0.35)" }}>
+              Avaliações Recentes
+            </h4>
+            {loadingReviews ? (
+              <p style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.87rem" }}>A carregar avaliações...</p>
+            ) : reviews.length === 0 ? (
+              <p style={{ color: "rgba(255,255,255,0.35)", fontSize: "0.87rem", fontStyle: "italic" }}>
+                Ainda sem avaliações de outros empreendedores.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                {reviews.map((rev) => (
+                  <div key={rev.id} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px", padding: "0.85rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.4rem" }}>
+                      <span style={{ fontWeight: "600", color: "#fff", fontSize: "0.85rem" }}>{rev.reviewer_name}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", color: "#facc15", fontSize: "0.8rem" }}>
+                        <Star size={11} fill="#facc15" />
+                        {rev.rating.toFixed(1)}
+                      </div>
+                    </div>
+                    <p style={{ margin: 0, color: "rgba(255,255,255,0.65)", fontSize: "0.83rem", lineHeight: "1.45" }}>{rev.comment}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

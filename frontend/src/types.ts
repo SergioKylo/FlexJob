@@ -2,7 +2,7 @@ export type Language = "pt" | "en";
 
 export type UserRole = "worker" | "employer";
 
-export type AppView = "map" | "jobs" | "workers" | "wallet" | "profile";
+export type AppView = "map" | "jobs" | "workers" | "messages" | "wallet" | "profile";
 
 export type WorkMode = "need" | "work";
 
