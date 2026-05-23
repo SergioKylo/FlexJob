@@ -203,7 +203,20 @@ webApp.MapPost("/api/users/profile", (HttpContext context, ProfileUpdateRequest 
         return Results.BadRequest(new { message = "O nome é obrigatório." });
     }
 
-    var avatarUrl = $"https://api.dicebear.com/7.x/bottts/svg?seed={Uri.EscapeDataString(request.Name)}";
+    // Use provided avatar (base64 or URL), or keep existing, or generate DiceBear
+    string avatarValue;
+    if (!string.IsNullOrWhiteSpace(request.Avatar))
+    {
+        avatarValue = request.Avatar;
+    }
+    else
+    {
+        var existing = Database.ExecuteQuery("SELECT avatar FROM users WHERE id = @id", new() { { "@id", userId } });
+        var existingAvatar = existing.Count > 0 ? existing[0]["avatar"]?.ToString() : null;
+        avatarValue = !string.IsNullOrWhiteSpace(existingAvatar)
+            ? existingAvatar
+            : $"https://api.dicebear.com/7.x/bottts/svg?seed={Uri.EscapeDataString(request.Name)}";
+    }
 
     Database.ExecuteNonQuery(
         "UPDATE users SET name = @name, bio = @bio, avatar = @avatar WHERE id = @id",
@@ -211,11 +224,11 @@ webApp.MapPost("/api/users/profile", (HttpContext context, ProfileUpdateRequest 
         {
             { "@name", request.Name },
             { "@bio", request.Bio ?? "" },
-            { "@avatar", avatarUrl },
+            { "@avatar", avatarValue },
             { "@id", userId }
         });
 
-    return Results.Ok(new { message = "Perfil atualizado com sucesso!", avatar = avatarUrl });
+    return Results.Ok(new { message = "Perfil atualizado com sucesso!", avatar = avatarValue });
 });
 
 webApp.MapGet("/api/users/reviews", (HttpContext context, int? userId) =>
@@ -1078,6 +1091,41 @@ webApp.MapPost("/api/payments/tip", (HttpContext context, TipRequest request) =>
     return Results.Ok(new { message = "Gorjeta enviada com sucesso!", amount = request.Amount });
 });
 
+// --- Update Job (Employer) ---
+
+webApp.MapPost("/api/jobs/update", (HttpContext context, UpdateJobRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+
+    if (role != "employer")
+        return Results.Json(new { message = "Apenas empreendedores podem editar vagas." }, statusCode: 403);
+
+    var jobs = Database.ExecuteQuery("SELECT employer_id, status FROM jobs WHERE id = @id", new() { { "@id", request.JobId } });
+    if (jobs.Count == 0) return Results.NotFound(new { message = "Vaga não encontrada." });
+    if (Convert.ToInt32(jobs[0]["employer_id"]) != userId)
+        return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
+    if (jobs[0]["status"]?.ToString() == "closed" || jobs[0]["status"]?.ToString() == "completed")
+        return Results.BadRequest(new { message = "Não é possível editar uma vaga fechada ou concluída." });
+
+    Database.ExecuteNonQuery(
+        @"UPDATE jobs SET title = @title, description = @desc, pay = @pay,
+          duration = @duration, work_date = @workDate, address = @address WHERE id = @id",
+        new()
+        {
+            { "@title", request.Title },
+            { "@desc", request.Description },
+            { "@pay", request.Pay },
+            { "@duration", request.Duration },
+            { "@workDate", request.WorkDate ?? "" },
+            { "@address", request.Address ?? "" },
+            { "@id", request.JobId }
+        });
+
+    return Results.Ok(new { message = "Vaga atualizada com sucesso." });
+});
+
 // --- Close Job (Employer) ---
 
 webApp.MapPost("/api/jobs/close", (HttpContext context, CloseJobRequest request) =>
@@ -1206,13 +1254,14 @@ public record ApplyRequest(int JobId);
 public record RespondRequest(int ApplicationId, bool Accept);
 public record AvailabilityRequest(double Lat, double Lng, double Radius, string StartTime, string EndTime, double HourlyRate, bool IsActive);
 public record MessageRequest(int ToUserId, int? JobId, string Content);
-public record ProfileUpdateRequest(string Name, string Bio);
+public record ProfileUpdateRequest(string Name, string Bio, string? Avatar = null);
 public record CompleteJobRequest(int JobId, double Rating, string Comment);
 public record EscrowRequest(int JobId, double Hours = 1.0, string? WorkDate = null, string? Notes = null);
 public record ReleasePaymentRequest(int JobId, double Rating, string Comment);
 public record AcceptWorkerRequest(int JobId, int WorkerId, bool Accept);
 public record TipRequest(int JobId, double Amount);
 public record CloseJobRequest(int JobId);
+public record UpdateJobRequest(int JobId, string Title, string Description, double Pay, string Duration, string? WorkDate = null, string? Address = null);
 public record WorkerReviewRequest(int JobId, double Rating, string? Comment = null);
 
 // --- Geospatial helpers ---

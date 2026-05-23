@@ -255,6 +255,20 @@ export const api = {
     });
   },
 
+  async updateJob(job: { jobId: number; title: string; description: string; pay: number; duration: string; workDate?: string; address?: string }): Promise<{ message: string }> {
+    return request<{ message: string }>("/api/jobs/update", {
+      method: "POST",
+      body: job as any,
+    });
+  },
+
+  async updateProfile(name: string, bio: string, avatar?: string): Promise<{ message: string; avatar: string }> {
+    return request<{ message: string; avatar: string }>("/api/users/profile", {
+      method: "POST",
+      body: { name, bio, avatar } as any,
+    });
+  },
+
   // Wallet
   async getWallet(): Promise<{ balance: number; escrow: number; transactions: Array<{ title: string; amount: number; partnerName: string; date: string; status: string }> }> {
     return request<any>("/api/wallet");

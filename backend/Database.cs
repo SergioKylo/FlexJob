@@ -160,6 +160,7 @@ public static class Database
         try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_status VARCHAR(50) NOT NULL DEFAULT 'none'"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_amount DOUBLE NOT NULL DEFAULT 0"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN work_date VARCHAR(50) NOT NULL DEFAULT ''"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE users MODIFY COLUMN avatar MEDIUMTEXT"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE messages ADD COLUMN message_type VARCHAR(50) NOT NULL DEFAULT 'text'"); } catch { }
 
         // Seed mock data if database is empty
