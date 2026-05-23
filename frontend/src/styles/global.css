@@ -13,6 +13,59 @@
   --shadow:  0 18px 50px rgba(0, 0, 0, 0.55);
 }
 
+[data-theme="light"] {
+  --bg:      #f3f5f2;
+  --surface: #ffffff;
+  --surface2: #edf0ea;
+  --ink:     #141511;
+  --muted:   #686d63;
+  --line:    #dde2d8;
+  --shadow:  0 18px 50px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .topbar {
+  background: rgba(243, 245, 242, 0.92);
+}
+
+[data-theme="light"] .bottom-nav {
+  background: rgba(255, 255, 255, 0.97);
+}
+
+[data-theme="light"] .map-detail {
+  background: rgba(255, 255, 255, 0.98);
+}
+
+[data-theme="light"] .location-pill {
+  background: rgba(243, 245, 242, 0.92);
+}
+
+[data-theme="light"] .landing-shell {
+  background:
+    linear-gradient(135deg, rgba(255, 210, 51, 0.1), transparent 42%),
+    linear-gradient(315deg, rgba(34, 201, 122, 0.06), transparent 38%),
+    var(--bg);
+}
+
+[data-theme="light"] .nav-pill:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme="light"] .secondary:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .icon-button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .job-card:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+[data-theme="light"] .modal::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -655,23 +708,26 @@ small,
 .job-card {
   display: grid;
   gap: 8px;
-  padding: 12px;
+  padding: 12px 12px 12px 14px;
   border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
   border-radius: 14px;
   background: var(--surface2);
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
 .job-card:hover {
   border-color: rgba(255, 210, 51, 0.3);
+  border-left-color: rgba(255, 210, 51, 0.5);
   background: rgba(255, 255, 255, 0.03);
 }
 
 .job-card.active {
   border-color: var(--yellow-dark);
+  border-left-color: var(--yellow);
   background: rgba(255, 210, 51, 0.06);
-  box-shadow: 0 0 0 2px rgba(255, 210, 51, 0.2);
+  box-shadow: 0 0 0 1px rgba(255, 210, 51, 0.15);
 }
 
 .job-card h3 {
@@ -735,6 +791,7 @@ small,
 .job-card.matched {
   background: rgba(34, 201, 122, 0.06);
   border-color: rgba(34, 201, 122, 0.25);
+  border-left-color: var(--green);
 }
 
 /* ── Map panel ────────────────────────────────────────────────────────────── */

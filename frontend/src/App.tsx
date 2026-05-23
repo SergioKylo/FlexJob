@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Globe2, LogOut, Map, Briefcase, Users, MessageSquare, Wallet, User } from "lucide-react";
+import { Globe2, LogOut, Map, Briefcase, Users, MessageSquare, Wallet, User, Sun, Moon } from "lucide-react";
 import { translations, type TranslationKey } from "./i18n/translations";
 import { WorkersPage } from "./pages/WorkersPage";
 import { JobsPage } from "./pages/JobsPage";
@@ -23,6 +23,7 @@ const VIEW_ICONS: Record<AppView, JSX.Element> = {
 
 export function App() {
   const [language, setLanguage] = useState<Language>("pt");
+  const [theme, setTheme] = useState<"dark" | "light">(() => (localStorage.getItem("fj-theme") as "dark" | "light") || "dark");
   const [user, setUser] = useState<UserType | null>(null);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<AppView>("map");
@@ -38,6 +39,11 @@ export function App() {
   } | null>(null);
 
   const t = (key: TranslationKey) => translations[language][key];
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("fj-theme", theme);
+  }, [theme]);
 
   const allItems = useMemo(() => [...needs, ...workers], [needs, workers]);
 
@@ -208,6 +214,9 @@ export function App() {
         </nav>
 
         <div className="top-actions">
+          <button className="icon-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle theme">
+            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           <button className="icon-button" onClick={() => setLanguage(language === "pt" ? "en" : "pt")} aria-label="Switch language">
             <Globe2 size={18} />
             {language.toUpperCase()}

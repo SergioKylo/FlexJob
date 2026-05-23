@@ -496,51 +496,65 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
           </MapContainer>
 
           {activeItem && (
-            <div className="map-detail" style={{ maxHeight: "380px", overflowY: "auto" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "4px" }}>
-                <span className="tag">{isEmployer ? "Trabalhador Disponível" : t(activeItem.type)}</span>
-                <button onClick={() => setActiveId(null)} className="reset-button" style={{ color: "var(--muted)", padding: "2px" }}>
-                  <X size={16} />
+            <div className="map-detail" style={{ maxHeight: "420px", overflowY: "auto" }}>
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span className="tag" style={{ marginBottom: "6px", display: "inline-block" }}>
+                    {isEmployer ? "Trabalhador Disponível" : t(activeItem.type)}
+                  </span>
+                  <h3 style={{ fontSize: "1.1rem", fontWeight: "700", margin: "4px 0 2px", color: "var(--ink)", lineHeight: 1.2 }}>
+                    {activeItem.title}
+                  </h3>
+                  <p style={{ fontSize: "12px", color: "var(--muted)", margin: 0 }}>
+                    {isEmployer ? activeItem.description.slice(0, 55) + (activeItem.description.length > 55 ? "…" : "") : `Por ${activeItem.requester}`}
+                  </p>
+                </div>
+                <button onClick={() => setActiveId(null)} className="reset-button" style={{ color: "var(--muted)", padding: "4px", flexShrink: 0, marginLeft: "8px" }}>
+                  <X size={18} />
                 </button>
               </div>
-              <h3 style={{ fontSize: "1.2rem", fontWeight: "bold", margin: "4px 0" }}>{activeItem.title}</h3>
-              <p style={{ fontSize: "13px", color: "var(--muted)", margin: "4px 0" }}>
-                {isEmployer ? `Apoio em: ${activeItem.description}` : `Requisitado por: ${activeItem.requester}`}
-              </p>
-              
-              <div style={{ display: "flex", gap: "10px", margin: "8px 0", fontSize: "13px", background: "#f8faf6", padding: "8px", borderRadius: "10px" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  <MapPin size={14} /> {activeItem.city} ({activeItem.distance} km)
+
+              {/* Pill row: pay, rating, distance */}
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "12px" }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "999px", background: "rgba(255,210,51,0.15)", border: "1px solid rgba(255,210,51,0.25)", color: "var(--yellow)", fontSize: "13px", fontWeight: "800" }}>
+                  <DollarSign size={12} />
+                  {activeItem.pay}€/h
                 </span>
-                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                  <Star size={14} fill="var(--yellow)" color="var(--yellow-dark)" /> {activeItem.rating.toFixed(1)}
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "999px", background: "rgba(34,201,122,0.12)", border: "1px solid rgba(34,201,122,0.22)", color: "var(--green)", fontSize: "13px", fontWeight: "700" }}>
+                  <Star size={12} fill="currentColor" />
+                  {activeItem.rating.toFixed(1)}
+                </span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 10px", borderRadius: "999px", background: "var(--surface2)", border: "1px solid var(--line)", color: "var(--muted)", fontSize: "12px", fontWeight: "600" }}>
+                  <MapPin size={12} />
+                  {activeItem.city} · {activeItem.distance} km
                 </span>
               </div>
 
-              {/* Job Photo in map details */}
+              {/* Job Photo */}
               {!isEmployer && activeItem.photo && (
-                <div style={{ margin: "10px 0", borderRadius: "14px", overflow: "hidden", border: "1px solid var(--line)" }}>
-                  <img src={activeItem.photo} alt={activeItem.title} style={{ width: "100%", maxHeight: "150px", objectFit: "cover" }} />
+                <div style={{ marginBottom: "12px", borderRadius: "12px", overflow: "hidden", border: "1px solid var(--line)" }}>
+                  <img src={activeItem.photo} alt={activeItem.title} style={{ width: "100%", maxHeight: "140px", objectFit: "cover", display: "block" }} />
                 </div>
               )}
 
-              {/* Display reviews list dynamically for Employers viewing workers */}
+              {/* Reviews for workers */}
               {isEmployer && (
-                <div style={{ margin: "10px 0", borderTop: "1px solid var(--line)", paddingTop: "10px" }}>
-                  <h4 style={{ fontSize: "12px", textTransform: "uppercase", color: "var(--muted)", marginBottom: "6px" }}>Avaliações anteriores:</h4>
+                <div style={{ marginBottom: "12px", borderTop: "1px solid var(--line)", paddingTop: "10px" }}>
+                  <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--muted)", marginBottom: "8px" }}>Avaliações</h4>
                   {loadingReviews ? (
-                    <div style={{ fontSize: "12px", color: "var(--muted)" }}>A carregar avaliações...</div>
+                    <div style={{ fontSize: "12px", color: "var(--muted)" }}>A carregar...</div>
                   ) : reviews.length === 0 ? (
-                    <div style={{ fontSize: "12px", color: "var(--muted)", fontStyle: "italic" }}>Ainda sem avaliações de outros empreendedores.</div>
+                    <div style={{ fontSize: "12px", color: "var(--muted)", fontStyle: "italic" }}>Sem avaliações ainda.</div>
                   ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "110px", overflowY: "auto" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", maxHeight: "100px", overflowY: "auto" }}>
                       {reviews.map((r: any, idx: number) => (
-                        <div key={idx} style={{ background: "#f1f3ed", padding: "6px", borderRadius: "8px", fontSize: "11px" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold" }}>
-                            <span>{r.reviewer_name || "Empreendedor"}</span>
-                            <span style={{ color: "var(--yellow-dark)" }}>★ {ConvertRating(r.rating)}</span>
+                        <div key={idx} style={{ background: "var(--surface2)", padding: "8px 10px", borderRadius: "8px", fontSize: "11px", border: "1px solid var(--line)" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "700", marginBottom: "2px" }}>
+                            <span style={{ color: "var(--ink)" }}>{r.reviewer_name || "Empreendedor"}</span>
+                            <span style={{ color: "var(--yellow)" }}>★ {ConvertRating(r.rating)}</span>
                           </div>
-                          <div style={{ color: "var(--muted)", marginTop: "2px" }}>{r.comment || "Sem comentário."}</div>
+                          <div style={{ color: "var(--muted)" }}>{r.comment || "Sem comentário."}</div>
                         </div>
                       ))}
                     </div>
@@ -548,17 +562,18 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
                 </div>
               )}
 
+              {/* Description for jobs */}
               {!isEmployer && (
-                <div style={{ margin: "10px 0", fontSize: "13px" }}>
-                  <h4 style={{ fontSize: "12px", textTransform: "uppercase", color: "var(--muted)", marginBottom: "4px" }}>Descrição:</h4>
-                  <p style={{ color: "var(--muted)", lineHeight: 1.3 }}>{activeItem.description}</p>
-                  <p style={{ color: "var(--muted)", fontSize: "11px", marginTop: "4px" }}>⏳ Duração prevista: {activeItem.time}</p>
+                <div style={{ marginBottom: "12px" }}>
+                  <h4 style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "var(--muted)", marginBottom: "6px" }}>Descrição</h4>
+                  <p style={{ fontSize: "13px", color: "var(--muted)", lineHeight: 1.45, margin: "0 0 4px" }}>{activeItem.description}</p>
+                  <p style={{ fontSize: "11px", color: "var(--muted)", margin: 0, opacity: 0.75 }}>⏳ {activeItem.time}</p>
                 </div>
               )}
 
-              {/* Multi-action footer (Chat & Match/Apply) */}
-              <div style={{ display: "flex", gap: "10px", marginTop: "12px", borderTop: "1px solid var(--line)", paddingTop: "10px" }}>
-                <button 
+              {/* Action buttons */}
+              <div style={{ display: "flex", gap: "8px", borderTop: "1px solid var(--line)", paddingTop: "12px" }}>
+                <button
                   onClick={() => {
                     const partnerId = isEmployer ? activeItem.id : (activeItem.employerId ?? 0);
                     const partnerName = isEmployer ? activeItem.title : activeItem.requester;
@@ -566,18 +581,18 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, workers: initi
                     onStartChat(partnerId, partnerName, undefined, jobId);
                   }}
                   className="secondary"
-                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "0 10px", minHeight: "40px" }}
+                  style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", minHeight: "38px", fontSize: "13px", padding: "0 8px" }}
                 >
-                  <MessageCircle size={16} />
+                  <MessageCircle size={14} />
                   Mensagem
                 </button>
-                <button 
+                <button
                   onClick={() => onCreateMatch(activeItem)}
                   className={isMatched(activeItem) ? "secondary" : "primary"}
                   disabled={isMatched(activeItem) && !isEmployer}
-                  style={{ flex: 1.5, minHeight: "40px" }}
+                  style={{ flex: 1.5, minHeight: "38px", fontSize: "13px" }}
                 >
-                  {isEmployer ? "Convidar" : isMatched(activeItem) ? "Candidatado" : "Candidatar-se"}
+                  {isEmployer ? "Convidar" : isMatched(activeItem) ? "✓ Candidatado" : "Candidatar-se"}
                 </button>
               </div>
             </div>
