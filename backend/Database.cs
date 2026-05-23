@@ -76,6 +76,7 @@ public static class Database
                         duration VARCHAR(100),
                         status VARCHAR(50) NOT NULL, /* open, accepted, completed */
                         payment_status VARCHAR(50) NOT NULL DEFAULT 'none', /* none, escrowed, released */
+                        payment_amount DOUBLE NOT NULL DEFAULT 0,
                         employer_id INT NOT NULL,
                         worker_id INT,
                         photo LONGTEXT, /* Base64 string for job photo */
