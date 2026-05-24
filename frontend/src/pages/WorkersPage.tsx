@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Star, MessageSquare, Search, MapPin, X, Clock, Briefcase } from "lucide-react";
+import { Star, MessageSquare, Search, MapPin, X, Clock, Briefcase, CheckCircle } from "lucide-react";
 import type { Opportunity, MatchRecord, User } from "../types";
 import { api } from "../utils/api";
 
@@ -170,6 +170,9 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
             onStartChat(selectedWorker.id, selectedWorker.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${selectedWorker.title}`, jobId);
             setSelectedWorker(null);
           }}
+          onPropose={async (jobId: number) => {
+            await api.proposeJob({ workerId: selectedWorker.id, existingJobId: jobId, pay: 0 });
+          }}
         />
       )}
     </section>
@@ -283,15 +286,31 @@ function WorkerCard({ worker, onOpen, onChat }: {
 
 /* ─── Worker Detail Drawer ───────────────────────────────────────────────────── */
 
-function WorkerDetailDrawer({ worker, reviews, loadingReviews, employerJobs, onClose, onChat }: {
+function WorkerDetailDrawer({ worker, reviews, loadingReviews, employerJobs, onClose, onChat, onPropose }: {
   worker: Opportunity;
   reviews: Review[];
   loadingReviews: boolean;
   employerJobs: MatchRecord[];
   onClose: () => void;
   onChat: (jobId?: number) => void;
+  onPropose?: (jobId: number) => Promise<void>;
 }) {
   const [showJobPicker, setShowJobPicker] = useState(false);
+  const [proposing, setProposing] = useState(false);
+  const [proposedJobId, setProposedJobId] = useState<number | null>(null);
+
+  async function handlePropose(jobId: number) {
+    if (!onPropose) return;
+    setProposing(true);
+    try {
+      await onPropose(jobId);
+      setProposedJobId(jobId);
+    } catch (err: any) {
+      alert(err?.message || "Erro ao enviar proposta.");
+    } finally {
+      setProposing(false);
+    }
+  }
 
   return (
     <div
@@ -394,29 +413,36 @@ function WorkerDetailDrawer({ worker, reviews, loadingReviews, employerJobs, onC
                   </p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column" }}>
-                    {employerJobs.map((job) => (
-                      <button
-                        key={job.id}
-                        onClick={() => onChat(job.id)}
-                        style={{
-                          display: "flex", alignItems: "center", gap: "0.75rem",
-                          padding: "0.75rem 1rem",
-                          background: "none", border: "none", borderTop: "1px solid var(--line)",
-                          color: "var(--ink)", textAlign: "left", cursor: "pointer",
-                          transition: "background 0.15s",
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-                      >
-                        <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          <Briefcase size={16} style={{ color: "#f59e0b" }} />
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ margin: 0, fontWeight: "700", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.title}</p>
-                          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--muted)" }}>€{job.pay}/h · {job.city}</p>
-                        </div>
-                      </button>
-                    ))}
+                    {employerJobs.map((job) => {
+                      const alreadyProposed = proposedJobId === job.id;
+                      return (
+                        <button
+                          key={job.id}
+                          onClick={() => !alreadyProposed && handlePropose(job.id)}
+                          disabled={proposing || alreadyProposed}
+                          style={{
+                            display: "flex", alignItems: "center", gap: "0.75rem",
+                            padding: "0.75rem 1rem",
+                            background: alreadyProposed ? "rgba(34,201,122,0.08)" : "none",
+                            border: "none", borderTop: "1px solid var(--line)",
+                            color: "var(--ink)", textAlign: "left", cursor: alreadyProposed ? "default" : "pointer",
+                            transition: "background 0.15s", opacity: proposing && !alreadyProposed ? 0.55 : 1,
+                          }}
+                          onMouseEnter={(e) => { if (!alreadyProposed) e.currentTarget.style.background = "var(--surface)"; }}
+                          onMouseLeave={(e) => { if (!alreadyProposed) e.currentTarget.style.background = "none"; }}
+                        >
+                          <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: alreadyProposed ? "rgba(34,201,122,0.15)" : "rgba(251,191,36,0.15)", border: `1px solid ${alreadyProposed ? "rgba(34,201,122,0.3)" : "rgba(251,191,36,0.3)"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {alreadyProposed ? <CheckCircle size={16} style={{ color: "var(--green)" }} /> : <Briefcase size={16} style={{ color: "#f59e0b" }} />}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ margin: 0, fontWeight: "700", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.title}</p>
+                            <p style={{ margin: 0, fontSize: "0.75rem", color: alreadyProposed ? "var(--green)" : "var(--muted)" }}>
+                              {alreadyProposed ? "✓ Proposta enviada!" : `€${job.pay}/h · ${job.city}`}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>

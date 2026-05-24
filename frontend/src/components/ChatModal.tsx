@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, X, MessageCircle } from "lucide-react";
+import { Send, X, MessageCircle, Briefcase, CheckCircle, XCircle } from "lucide-react";
 import { api } from "../utils/api";
+import { JobProposalModal } from "./JobProposalModal";
 import type { ChatMessage, User } from "../types";
 
 interface ChatModalProps {
@@ -23,6 +24,8 @@ export function ChatModal({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(true);
+  const [showProposal, setShowProposal] = useState(false);
+  const [respondingJob, setRespondingJob] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch messages initially and set up polling
@@ -54,6 +57,19 @@ export function ChatModal({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  async function handleRespondProposal(jobId: number, accept: boolean) {
+    setRespondingJob(jobId);
+    try {
+      await api.respondToProposal(jobId, accept);
+      const data = await api.getMessages(partnerId, jobId);
+      setMessages(data);
+    } catch (err: any) {
+      alert(err?.message || "Erro ao responder à proposta.");
+    } finally {
+      setRespondingJob(null);
+    }
+  }
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -109,10 +125,74 @@ export function ChatModal({
             <div className="chat-message-list">
               {messages.map((msg) => {
                 const isMe = msg.fromUserId === currentUser.id;
-                const formattedTime = new Date(msg.createdAt).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                });
+                const formattedTime = new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                const isWorker = currentUser.role === "worker";
+
+                // Job proposal card
+                if (msg.messageType === "job_proposal") {
+                  let proposal: any = null;
+                  try { proposal = JSON.parse(msg.content); } catch { /* ignore */ }
+                  const canRespond = isWorker && !isMe;
+                  const isResponding = respondingJob === proposal?.jobId;
+                  return (
+                    <div key={msg.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
+                      <div style={{ maxWidth: "85%", borderRadius: "16px", border: "2px solid rgba(255,210,51,0.4)", background: "var(--surface)", overflow: "hidden", boxShadow: "0 4px 16px rgba(0,0,0,0.12)" }}>
+                        {/* Card header */}
+                        <div style={{ padding: "10px 14px 8px", background: "rgba(255,210,51,0.1)", borderBottom: "1px solid rgba(255,210,51,0.2)", display: "flex", alignItems: "center", gap: "8px" }}>
+                          <Briefcase size={15} style={{ color: "var(--yellow)", flexShrink: 0 }} />
+                          <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--yellow)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Proposta de Trabalho</span>
+                        </div>
+                        {/* Card body */}
+                        {proposal ? (
+                          <div style={{ padding: "10px 14px" }}>
+                            <p style={{ margin: "0 0 4px", fontWeight: 800, fontSize: "14px", color: "var(--ink)" }}>{proposal.title}</p>
+                            {proposal.description && <p style={{ margin: "0 0 8px", fontSize: "12px", color: "var(--muted)", lineHeight: 1.4 }}>{proposal.description}</p>}
+                            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+                              <span style={{ padding: "3px 9px", borderRadius: "999px", background: "rgba(255,210,51,0.15)", border: "1px solid rgba(255,210,51,0.25)", fontSize: "12px", fontWeight: 700, color: "var(--yellow)" }}>€{proposal.pay}/h</span>
+                              {proposal.duration && <span style={{ padding: "3px 9px", borderRadius: "999px", background: "var(--surface2)", border: "1px solid var(--line)", fontSize: "12px", color: "var(--muted)" }}>⏱ {proposal.duration}</span>}
+                              {proposal.workDate && <span style={{ padding: "3px 9px", borderRadius: "999px", background: "var(--surface2)", border: "1px solid var(--line)", fontSize: "12px", color: "var(--muted)" }}>📅 {proposal.workDate}</span>}
+                            </div>
+                            {canRespond && (
+                              <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
+                                <button onClick={() => handleRespondProposal(proposal.jobId, true)} disabled={isResponding}
+                                  style={{ flex: 1, padding: "8px", borderRadius: "10px", border: "none", background: "var(--green)", color: "#fff", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", opacity: isResponding ? 0.55 : 1 }}>
+                                  <CheckCircle size={14} /> Aceitar
+                                </button>
+                                <button onClick={() => handleRespondProposal(proposal.jobId, false)} disabled={isResponding}
+                                  style={{ flex: 1, padding: "8px", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--muted)", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", opacity: isResponding ? 0.55 : 1 }}>
+                                  <XCircle size={14} /> Recusar
+                                </button>
+                              </div>
+                            )}
+                            {isMe && <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--muted)", textAlign: "right" }}>Aguarda resposta do trabalhador...</p>}
+                          </div>
+                        ) : (
+                          <div style={{ padding: "10px 14px" }}><p style={{ margin: 0, color: "var(--muted)", fontSize: "13px" }}>{msg.content}</p></div>
+                        )}
+                        <div style={{ padding: "0 14px 8px", textAlign: "right" }}>
+                          <span style={{ fontSize: "10px", color: "var(--muted)", opacity: 0.7 }}>{formattedTime}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // System messages (payment, application, warnings, etc.)
+                if (msg.messageType !== "text") {
+                  const color = msg.messageType === "payment_escrow" || msg.messageType === "payment_released" ? "var(--green)"
+                    : msg.messageType === "proposal_rejected" ? "#ef4444"
+                    : msg.messageType === "admin_warning" ? "#f59e0b"
+                    : "var(--muted)";
+                  return (
+                    <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
+                      <div style={{ padding: "6px 14px", borderRadius: "10px", background: `color-mix(in srgb, ${color} 10%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 30%, transparent)`, maxWidth: "85%", textAlign: "center" }}>
+                        <p style={{ margin: 0, fontSize: "12px", color, fontWeight: 600 }}>{msg.content}</p>
+                        <span style={{ fontSize: "10px", color: "var(--muted)", opacity: 0.7 }}>{formattedTime}</span>
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={msg.id} className={`chat-message-bubble-wrapper ${isMe ? "me" : "them"}`}>
                     <div className="chat-message-bubble">
@@ -130,6 +210,11 @@ export function ChatModal({
         {/* Footer input form */}
         <footer className="chat-modal-footer">
           <form onSubmit={handleSend} className="chat-input-form">
+            {currentUser.role === "employer" && (
+              <button type="button" onClick={() => setShowProposal(true)} className="chat-propose-button" title="Propor Trabalho">
+                <Briefcase size={17} />
+              </button>
+            )}
             <input
               type="text"
               value={inputText}
@@ -144,6 +229,21 @@ export function ChatModal({
           </form>
         </footer>
       </div>
+
+      {/* Job proposal modal overlay */}
+      {showProposal && (
+        <JobProposalModal
+          workerId={partnerId}
+          workerName={partnerName}
+          currentUser={currentUser}
+          onClose={() => setShowProposal(false)}
+          onSent={async (jobId) => {
+            setShowProposal(false);
+            const data = await api.getMessages(partnerId, jobId);
+            setMessages(data);
+          }}
+        />
+      )}
 
       <style>{`
         .chat-modal-overlay {
@@ -405,6 +505,26 @@ export function ChatModal({
           background: var(--surface2);
           color: var(--muted);
           cursor: not-allowed;
+        }
+
+        .chat-propose-button {
+          width: 44px;
+          height: 44px;
+          border-radius: 14px;
+          background: rgba(255,210,51,0.12);
+          color: var(--yellow);
+          border: 1px solid rgba(255,210,51,0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+          flex-shrink: 0;
+          transition: all 0.2s;
+        }
+
+        .chat-propose-button:hover {
+          background: rgba(255,210,51,0.22);
+          border-color: var(--yellow);
         }
 
         @keyframes fadeIn {

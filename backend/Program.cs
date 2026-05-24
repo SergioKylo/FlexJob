@@ -1188,6 +1188,133 @@ webApp.MapPost("/api/jobs/close", (HttpContext context, CloseJobRequest request)
     return Results.Ok(new { message = "Vaga fechada com sucesso." });
 });
 
+// --- Employer proposes a job directly to a worker ---
+webApp.MapPost("/api/jobs/propose", (HttpContext context, ProposeJobRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+    if (role != "employer")
+        return Results.Json(new { message = "Apenas empreendedores podem propor vagas." }, statusCode: 403);
+
+    int jobId;
+    string jobTitle, jobDescription, jobAddress, jobDuration, jobWorkDate;
+    double jobPay;
+    var now = DateTime.UtcNow.ToString("o");
+
+    if (request.ExistingJobId.HasValue)
+    {
+        // Reuse existing open job
+        var jobRows = Database.ExecuteQuery(
+            "SELECT id, title, description, address, pay, duration, work_date FROM jobs WHERE id = @id AND employer_id = @emp AND status = 'open'",
+            new() { { "@id", request.ExistingJobId.Value }, { "@emp", userId } });
+        if (jobRows.Count == 0)
+            return Results.BadRequest(new { message = "Vaga não encontrada ou não disponível." });
+        var j = jobRows[0];
+        jobId = Convert.ToInt32(j["id"]);
+        jobTitle       = j["title"]?.ToString() ?? "";
+        jobDescription = j["description"]?.ToString() ?? "";
+        jobAddress     = j["address"]?.ToString() ?? "";
+        jobPay         = Convert.ToDouble(j["pay"]);
+        jobDuration    = j["duration"]?.ToString() ?? "";
+        jobWorkDate    = j["work_date"]?.ToString() ?? "";
+        // Mark job as proposed to this worker
+        Database.ExecuteNonQuery(
+            "UPDATE jobs SET status = 'proposed', worker_id = @w WHERE id = @id",
+            new() { { "@w", request.WorkerId }, { "@id", jobId } });
+    }
+    else
+    {
+        // Create a new job from the proposal details
+        if (string.IsNullOrWhiteSpace(request.Title))
+            return Results.BadRequest(new { message = "Título obrigatório." });
+        var empRows = Database.ExecuteQuery("SELECT lat, lng FROM users WHERE id = @id", new() { { "@id", userId } });
+        double lat = empRows.Count > 0 && empRows[0]["lat"] != null ? Convert.ToDouble(empRows[0]["lat"]) : 0;
+        double lng = empRows.Count > 0 && empRows[0]["lng"] != null ? Convert.ToDouble(empRows[0]["lng"]) : 0;
+        jobTitle       = request.Title;
+        jobDescription = request.Description ?? "";
+        jobAddress     = request.Address ?? "Local a combinar";
+        jobPay         = request.Pay;
+        jobDuration    = request.Duration ?? "A definir";
+        jobWorkDate    = request.WorkDate ?? "";
+        Database.ExecuteNonQuery(
+            @"INSERT INTO jobs (employer_id, worker_id, title, description, category, lat, lng, address, pay, pay_type, duration, status, work_date, created_at)
+              VALUES (@emp, @w, @title, @desc, 'outros', @lat, @lng, @addr, @pay, 'hourly', @dur, 'proposed', @wd, @now)",
+            new() {
+                { "@emp", userId }, { "@w", request.WorkerId },
+                { "@title", jobTitle }, { "@desc", jobDescription },
+                { "@lat", lat }, { "@lng", lng }, { "@addr", jobAddress },
+                { "@pay", jobPay }, { "@dur", jobDuration },
+                { "@wd", jobWorkDate }, { "@now", now }
+            });
+        var idRow = Database.ExecuteQuery("SELECT LAST_INSERT_ID() AS id");
+        jobId = Convert.ToInt32(idRow[0]["id"]);
+    }
+
+    // Send job_proposal message
+    var content = System.Text.Json.JsonSerializer.Serialize(new {
+        jobId, title = jobTitle, description = jobDescription,
+        pay = jobPay, duration = jobDuration, workDate = jobWorkDate, address = jobAddress
+    });
+    Database.ExecuteNonQuery(
+        @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
+          VALUES (@from, @to, @jobId, @content, 'job_proposal', @now)",
+        new() { { "@from", userId }, { "@to", request.WorkerId }, { "@jobId", jobId }, { "@content", content }, { "@now", now } });
+
+    return Results.Ok(new { message = "Proposta enviada com sucesso!", jobId });
+});
+
+// --- Worker responds to a job proposal (accept / reject) ---
+webApp.MapPost("/api/jobs/respond-proposal", (HttpContext context, RespondProposalRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var role = context.User.FindFirst(ClaimTypes.Role)?.Value;
+    if (role != "worker")
+        return Results.Json(new { message = "Apenas trabalhadores podem responder a propostas." }, statusCode: 403);
+
+    var jobRows = Database.ExecuteQuery(
+        "SELECT id, employer_id, title, pay FROM jobs WHERE id = @id AND worker_id = @w AND status = 'proposed'",
+        new() { { "@id", request.JobId }, { "@w", userId } });
+    if (jobRows.Count == 0)
+        return Results.BadRequest(new { message = "Proposta não encontrada ou já respondida." });
+
+    var job        = jobRows[0];
+    int employerId = Convert.ToInt32(job["employer_id"]);
+    double pay     = Convert.ToDouble(job["pay"]);
+    var now        = DateTime.UtcNow.ToString("o");
+
+    if (!request.Accept)
+    {
+        Database.ExecuteNonQuery("UPDATE jobs SET status = 'closed' WHERE id = @id", new() { { "@id", request.JobId } });
+        Database.ExecuteNonQuery(
+            @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
+              VALUES (@from, @to, @jid, 'Proposta recusada.', 'proposal_rejected', @now)",
+            new() { { "@from", userId }, { "@to", employerId }, { "@jid", request.JobId }, { "@now", now } });
+        return Results.Ok(new { message = "Proposta recusada." });
+    }
+
+    // Accept: check employer balance and escrow
+    var walletRows = Database.ExecuteQuery("SELECT wallet_balance FROM users WHERE id = @id", new() { { "@id", employerId } });
+    if (walletRows.Count == 0) return Results.BadRequest(new { message = "Empregador não encontrado." });
+    double balance = Convert.ToDouble(walletRows[0]["wallet_balance"]);
+    if (balance < pay)
+        return Results.BadRequest(new { message = $"O empregador não tem saldo suficiente (tem €{balance:F2}, necessário €{pay:F2})." });
+
+    Database.ExecuteNonQuery("UPDATE users SET wallet_balance = wallet_balance - @amt WHERE id = @emp",
+        new() { { "@amt", pay }, { "@emp", employerId } });
+    Database.ExecuteNonQuery(
+        "UPDATE jobs SET status = 'accepted', payment_status = 'escrowed', payment_amount = @pay WHERE id = @id",
+        new() { { "@pay", pay }, { "@id", request.JobId } });
+    Database.ExecuteNonQuery(
+        @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
+          VALUES (@from, @to, @jid, @content, 'payment_escrow', @now)",
+        new() { { "@from", userId }, { "@to", employerId }, { "@jid", request.JobId },
+                { "@content", $"Proposta aceite! €{pay:F2} em escrow — aguarda confirmação do empregador." }, { "@now", now } });
+
+    return Results.Ok(new { message = "Proposta aceite! Pagamento em escrow." });
+});
+
 // --- Worker Review (worker rates employer after job done) ---
 
 webApp.MapPost("/api/payments/worker-review", (HttpContext context, WorkerReviewRequest request) =>
@@ -1622,6 +1749,8 @@ public record UpdateJobRequest(int JobId, string Title, string Description, doub
 public record WorkerReviewRequest(int JobId, double Rating, string? Comment = null);
 public record ReportChatRequest(int ReportedUserId, int? JobId, string? Reason);
 public record AdminSendMsgRequest(int ToUserId, string Content);
+public record ProposeJobRequest(int WorkerId, int? ExistingJobId, string? Title, string? Description, double Pay, string? Duration, string? WorkDate, string? Address);
+public record RespondProposalRequest(int JobId, bool Accept);
 
 // --- Admin Helper ---
 public static class AdminHelper

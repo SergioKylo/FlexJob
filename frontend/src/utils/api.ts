@@ -255,6 +255,38 @@ export const api = {
     });
   },
 
+  async proposeJob(params: {
+    workerId: number;
+    existingJobId?: number;
+    title?: string;
+    description?: string;
+    pay: number;
+    duration?: string;
+    workDate?: string;
+    address?: string;
+  }): Promise<{ message: string; jobId: number }> {
+    return request<any>("/api/jobs/propose", {
+      method: "POST",
+      body: {
+        workerId: params.workerId,
+        existingJobId: params.existingJobId ?? null,
+        title: params.title ?? null,
+        description: params.description ?? null,
+        pay: params.pay,
+        duration: params.duration ?? null,
+        workDate: params.workDate ?? null,
+        address: params.address ?? null,
+      } as any,
+    });
+  },
+
+  async respondToProposal(jobId: number, accept: boolean): Promise<{ message: string }> {
+    return request<{ message: string }>("/api/jobs/respond-proposal", {
+      method: "POST",
+      body: { jobId, accept } as any,
+    });
+  },
+
   async closeJob(jobId: number): Promise<{ message: string }> {
     return request<{ message: string }>("/api/jobs/close", {
       method: "POST",
