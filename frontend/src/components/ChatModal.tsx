@@ -73,15 +73,7 @@ export function ChatModal({
     }
   }
 
-  // Get initials for avatar fallback
-  const getInitials = (name: string) => {
-    return name
-      .split(" ")
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase();
-  };
+  const resolvedAvatar = partnerAvatar || `https://api.dicebear.com/7.x/thumbs/svg?seed=${partnerId}&radius=50&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
 
   return (
     <div className="chat-modal-overlay">
@@ -89,11 +81,7 @@ export function ChatModal({
         {/* Header */}
         <header className="chat-modal-header">
           <div className="chat-partner-info">
-            {partnerAvatar ? (
-              <img src={partnerAvatar} alt={partnerName} className="chat-avatar" />
-            ) : (
-              <div className="chat-avatar-fallback">{getInitials(partnerName)}</div>
-            )}
+            <img src={resolvedAvatar} alt={partnerName} className="chat-avatar" />
             <div>
               <h3 className="chat-partner-name">{partnerName}</h3>
               <p className="chat-status-indicator">

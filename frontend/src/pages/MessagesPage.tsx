@@ -263,6 +263,10 @@ export function MessagesPage({
     return name.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase();
   }
 
+  function avatarUrl(id: number, src?: string): string {
+    return src || `https://api.dicebear.com/7.x/thumbs/svg?seed=${id}&radius=50&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`;
+  }
+
   function formatTime(dateStr: string) {
     if (!dateStr) return "";
     const d = new Date(dateStr);
@@ -318,19 +322,11 @@ export function MessagesPage({
                     className={`msg-conv-btn ${isActive ? "active" : ""}`}
                   >
                     <div style={{ position: "relative", flexShrink: 0 }}>
-                      {conv.partnerAvatar ? (
-                        <img src={conv.partnerAvatar} alt={conv.partnerName}
-                          style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover" }} />
-                      ) : (
-                        <div style={{
-                          width: "42px", height: "42px", borderRadius: "50%",
-                          background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontWeight: "700", color: "#fff", fontSize: "0.85rem",
-                        }}>
-                          {getInitials(conv.partnerName)}
-                        </div>
-                      )}
+                      <img
+                        src={avatarUrl(conv.partnerId, conv.partnerAvatar)}
+                        alt={conv.partnerName}
+                        style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover", border: "2px solid var(--line)" }}
+                      />
                       <span style={{
                         position: "absolute", bottom: "1px", right: "1px",
                         width: "9px", height: "9px", background: "#10b981",
@@ -380,14 +376,11 @@ export function MessagesPage({
                     <ArrowLeft size={18} />
                   </button>
                 )}
-                <div style={{
-                  width: "38px", height: "38px", borderRadius: "50%",
-                  background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontWeight: "700", color: "#fff", fontSize: "0.82rem", flexShrink: 0,
-                }}>
-                  {getInitials(selectedConv.partnerName)}
-                </div>
+                <img
+                  src={avatarUrl(selectedConv.partnerId, selectedConv.partnerAvatar)}
+                  alt={selectedConv.partnerName}
+                  style={{ width: "38px", height: "38px", borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "2px solid var(--line)" }}
+                />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <h3 style={{ margin: 0, fontSize: "0.92rem", fontWeight: "700", color: "var(--ink)" }}>
                     {selectedConv.partnerName}

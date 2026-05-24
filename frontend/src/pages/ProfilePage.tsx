@@ -77,10 +77,8 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
   const [savingJob, setSavingJob] = useState(false);
 
   useEffect(() => {
-    if (!isWorker) {
-      api.getMyJobs().then(setMyJobs).catch(() => {});
-    }
-  }, [isWorker]);
+    api.getMyJobs().then(setMyJobs).catch(() => {});
+  }, []);
 
   function handleAvatarFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -160,8 +158,10 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
   const roleBg     = isWorker ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)";
   const roleBorder = isWorker ? "rgba(16,185,129,0.3)"  : "rgba(245,158,11,0.3)";
 
-  const activeJobs = myJobs.filter((j) => j.status === "open" || j.status === "accepted");
-  const pastJobs   = myJobs.filter((j) => j.status === "completed" || j.status === "closed");
+  const activeJobs    = myJobs.filter((j) => j.status === "open" || j.status === "accepted");
+  const pastJobs      = myJobs.filter((j) => j.status === "completed" || j.status === "closed");
+  const completedJobs = myJobs.filter((j) => j.status === "completed");
+  const inProgressJobs = myJobs.filter((j) => j.status === "accepted");
 
   return (
     <section style={{ padding: "2rem", maxWidth: "700px", margin: "0 auto" }}>
@@ -241,9 +241,9 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
         {(isWorker
           ? [
-              { icon: <Briefcase size={18} />, label: "Tarefas concluídas", value: "–" },
-              { icon: <Clock size={18} />,     label: "Raio de ação",       value: "10 km" },
-              { icon: <CreditCard size={18} />,label: "Taxa de serviço",    value: "€0/h" },
+              { icon: <Briefcase size={18} />, label: "Tarefas concluídas", value: completedJobs.length > 0 ? String(completedJobs.length) : "–" },
+              { icon: <Clock size={18} />,     label: "Em curso",            value: inProgressJobs.length > 0 ? String(inProgressJobs.length) : "–" },
+              { icon: <Star size={18} />,      label: "Avaliação média",     value: `${rating.toFixed(1)} ★` },
             ]
           : [
               { icon: <Briefcase size={18} />, label: "Vagas publicadas",  value: String(myJobs.length || "–") },
@@ -275,6 +275,43 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
             <InfoCard title="Disponibilidade" icon={<Clock size={15} />}>
               Disponível para trabalhos de curta duração. Raio de ação: 10 km a partir de {region}.
             </InfoCard>
+
+            {/* Worker job history */}
+            {myJobs.length > 0 && (
+              <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.1rem 1.25rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.75rem" }}>
+                  <Briefcase size={15} style={{ color: "#6366f1" }} />
+                  <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>
+                    Histórico de Tarefas ({myJobs.length})
+                  </h4>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
+                  {myJobs.map((job) => {
+                    const st = STATUS_LABELS[job.status] ?? STATUS_LABELS.closed;
+                    return (
+                      <div key={job.id} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "var(--surface2)", border: "1px solid var(--line)" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: "0.85rem", fontWeight: "600", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {job.title}
+                          </div>
+                          {job.employerName && (
+                            <div style={{ fontSize: "0.72rem", color: "var(--muted)", marginTop: "0.1rem" }}>
+                              {job.employerName}{job.workDate ? ` · ${job.workDate}` : ""}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexShrink: 0 }}>
+                          <span style={{ fontSize: "0.78rem", fontWeight: "700", color: "#22c97a" }}>€{job.pay}/h</span>
+                          <span style={{ fontSize: "0.68rem", fontWeight: "700", padding: "0.15rem 0.5rem", borderRadius: "6px", background: st.bg, color: st.color }}>
+                            {st.label}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Change region */}
             <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.1rem 1.25rem" }}>

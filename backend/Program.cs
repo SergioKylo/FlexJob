@@ -460,11 +460,18 @@ webApp.MapPost("/api/jobs/apply", (HttpContext context, ApplyRequest request) =>
         return Results.BadRequest(new { message = "Esta tarefa já não está disponível." });
     }
 
+    // Block duplicate applications
+    var alreadyApplied = Database.ExecuteQuery(
+        "SELECT id FROM applications WHERE job_id = @jobId AND worker_id = @workerId",
+        new() { { "@jobId", request.JobId }, { "@workerId", userId } });
+    if (alreadyApplied.Count > 0)
+        return Results.BadRequest(new { message = "Já se candidatou a esta vaga." });
+
     var createdAt = DateTime.UtcNow.ToString("o");
     try
     {
         Database.ExecuteNonQuery(
-            @"INSERT IGNORE INTO applications (job_id, worker_id, status, created_at)
+            @"INSERT INTO applications (job_id, worker_id, status, created_at)
               VALUES (@jobId, @workerId, 'pending', @createdAt)",
             new()
             {

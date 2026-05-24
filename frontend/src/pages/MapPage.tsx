@@ -121,7 +121,7 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
     );
   }, [category, rawData, query, sort]);
 
-  const activeItem = filtered.find((item) => item.id === activeId) ?? filtered[0] ?? null;
+  const activeItem = activeId !== null ? (filtered.find((item) => item.id === activeId) ?? null) : null;
 
   function showToast(msg: string) {
     setToast(msg);
@@ -237,26 +237,46 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
                 <input placeholder={t("search")} value={query} onChange={(event) => setQuery(event.target.value)} />
               </div>
 
-              <div className="filters">
-                {["all", "restauracao", "eventos", "logistica", "casa", "retalho"].map((item) => (
-                  <button className={`chip ${category === item ? "active" : ""}`} key={item} onClick={() => setCategory(item)}>
-                    {item === "all" ? t("all") : t(item as TranslationKey)}
+              <div className="filters" style={{ gap: "5px" }}>
+                {([
+                  { key: "all",        emoji: "🗂️", label: "Todas"       },
+                  { key: "restauracao",emoji: "🍽️", label: "Restauração" },
+                  { key: "eventos",    emoji: "🎪", label: "Eventos"     },
+                  { key: "logistica",  emoji: "📦", label: "Logística"   },
+                  { key: "casa",       emoji: "🏠", label: "Casa"        },
+                  { key: "retalho",    emoji: "🛒", label: "Retalho"     },
+                ] as { key: string; emoji: string; label: string }[]).map(({ key, emoji, label }) => (
+                  <button
+                    key={key}
+                    className={`chip ${category === key ? "active" : ""}`}
+                    onClick={() => setCategory(key)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "4px" }}
+                  >
+                    <span>{emoji}</span>{label}
                   </button>
                 ))}
               </div>
 
-              <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", alignItems: "center", marginTop: "4px" }}>
-                <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", flexShrink: 0 }}>{t("sortBy")}:</span>
-                {(["match", "pay", "distance", "rating"] as SortMode[]).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSort(s)}
-                    className={`chip ${sort === s ? "active" : ""}`}
-                    style={{ fontSize: "0.72rem", padding: "2px 9px", minHeight: "24px" }}
-                  >
-                    {s === "match" ? t("bestMatch") : s === "pay" ? t("highestPay") : s === "distance" ? t("nearest") : t("bestRating")}
-                  </button>
-                ))}
+              {/* Sort: segmented control */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "4px 0 2px" }}>
+                <span style={{ fontSize: "10px", fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px", flexShrink: 0 }}>Ordem</span>
+                <div style={{ display: "flex", flex: 1, background: "var(--bg)", borderRadius: "10px", border: "1px solid var(--line)", padding: "3px", gap: "2px" }}>
+                  {(["match", "pay", "distance", "rating"] as SortMode[]).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setSort(s)}
+                      style={{
+                        flex: 1, padding: "4px 2px", borderRadius: "7px", border: "none",
+                        background: sort === s ? "var(--yellow)" : "transparent",
+                        color: sort === s ? "#181506" : "var(--muted)",
+                        fontSize: "10px", fontWeight: 700, cursor: "pointer",
+                        transition: "all 0.15s", whiteSpace: "nowrap",
+                      }}
+                    >
+                      {s === "match" ? "★ Match" : s === "pay" ? "€ Pag." : s === "distance" ? "📍 Dist." : "⭐ Aval."}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Job list header */}
@@ -300,8 +320,12 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
                         <span>{item.rating.toFixed(1)} Classificação</span>
                       </span>
                       {!isEmployer && (
-                        <button onClick={(event) => { event.stopPropagation(); onCreateMatch(item); }}>
-                          {isMatched(item) ? "Candidatado" : t("apply")}
+                        <button
+                          onClick={(event) => { event.stopPropagation(); if (!isMatched(item)) onCreateMatch(item); }}
+                          disabled={isMatched(item)}
+                          style={{ opacity: isMatched(item) ? 0.55 : 1 }}
+                        >
+                          {isMatched(item) ? "✓ Candidatado" : t("apply")}
                         </button>
                       )}
                     </div>

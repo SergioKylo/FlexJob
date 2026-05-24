@@ -234,7 +234,13 @@ public static class Database
                     'Estudante universitário em Braga. Disponível para eventos, catering e apoio geral. Energético e pontual.', 4.7, 0.0, 41.5510, -8.4310, @now),
                 (17, 'Joana Vieira', 'joana@email.com', @hash, 'worker',
                     'https://i.pravatar.cc/150?img=39',
-                    'Experiência em restauração e organização de eventos. Natural de Braga, conheço a cidade na perfeição.', 4.8, 20.0, 41.5400, -8.4200, @now)",
+                    'Experiência em restauração e organização de eventos. Natural de Braga, conheço a cidade na perfeição.', 4.8, 20.0, 41.5400, -8.4200, @now),
+                (18, 'Escola de Música do Minho', 'escolaminho@email.com', @hash, 'employer',
+                    'https://i.pravatar.cc/150?img=57',
+                    'Escola de música com 20 anos de história em Braga. Organizamos concertos, audições e eventos culturais.', 4.6, 200.0, 41.5520, -8.4180, @now),
+                (19, 'Quinta das Lameiras', 'quintalameiras@email.com', @hash, 'employer',
+                    'https://i.pravatar.cc/150?img=33',
+                    'Espaço de eventos rurais em Braga. Casamentos, festas privadas e retiros corporativos com charme minhoto.', 4.9, 280.0, 41.5700, -8.3800, @now)",
                 new() { { "@hash", pwhash2 }, { "@now", now2 } });
 
             ExecuteNonQuery(@"
@@ -264,7 +270,23 @@ public static class Database
                 (20, 'Limpeza Pós-Evento em Pavilhão',
                     'Limpeza geral do pavilhão após evento desportivo. Varrer, lavar pavimento e recolher lixo.',
                     'casa', 41.5550, -8.4100, 'Pavilhão Desportivo Municipal, Braga',
-                    10.0, 'hourly', '3 horas', 'open', 'none', 0, 15, NULL, '2026-05-27', @photo, @now)",
+                    10.0, 'hourly', '3 horas', 'open', 'none', 0, 15, NULL, '2026-05-27', @photo, @now),
+                (21, 'Assistente em Concerto de Piano',
+                    'Apoio na receção de público, acomodação de convidados e montagem de palco para concerto de música clássica.',
+                    'eventos', 41.5520, -8.4180, 'Escola de Música do Minho, Rua Nova, Braga',
+                    11.0, 'hourly', '4 horas', 'open', 'none', 0, 18, NULL, '2026-06-10', @photo, @now),
+                (22, 'Monitor de Oficina Musical',
+                    'Apoio a workshop infantil de percussão. Experiência com crianças valorizada. Material fornecido pela escola.',
+                    'eventos', 41.5525, -8.4175, 'Escola de Música do Minho, Rua Nova, Braga',
+                    12.0, 'hourly', '3 horas', 'open', 'none', 0, 18, NULL, '2026-06-17', @photo, @now),
+                (23, 'Empregado de Buffet em Casamento',
+                    'Servir buffet e bebidas num casamento de 150 convidados na quinta. Traje branco fornecido. Noite inteira.',
+                    'restauracao', 41.5700, -8.3800, 'Quinta das Lameiras, Braga',
+                    14.0, 'hourly', '8 horas', 'open', 'none', 0, 19, NULL, '2026-06-21', @photo, @now),
+                (24, 'Segurança em Festa de Verão',
+                    'Controlo de entradas e gestão de filas numa festa de verão ao ar livre. Postura profissional obrigatória.',
+                    'eventos', 41.5710, -8.3790, 'Quinta das Lameiras, Braga',
+                    13.5, 'hourly', '6 horas', 'open', 'none', 0, 19, NULL, '2026-06-28', @photo, @now)",
                 new() { { "@photo", ragaPhoto2 }, { "@now", now2 } });
             Console.WriteLine("Braga data migration applied.");
         }
