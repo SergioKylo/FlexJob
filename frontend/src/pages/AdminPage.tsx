@@ -131,15 +131,27 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
   const [convMessages, setConvMessages]   = useState<AdminConvMsg[]>([]);
   const [loadingConvMsgs, setLoadingConvMsgs] = useState(false);
   const [convFilter, setConvFilter]       = useState<"all" | "reported">("all");
+  const [convError, setConvError]         = useState<string | null>(null);
+  const [loadingConvs, setLoadingConvs]   = useState(false);
+  const [warnInput, setWarnInput]         = useState("");
+  const [sendingWarn, setSendingWarn]     = useState(false);
 
   useEffect(() => { loadAll(false); }, []);
 
+  function loadConversations() {
+    setConvError(null);
+    setLoadingConvs(true);
+    api.admin.getConversations()
+      .then((data) => { setConvList(data); setLoadingConvs(false); })
+      .catch((err) => {
+        console.error("Admin conversations error:", err);
+        setConvError(err?.message || "Erro ao carregar conversas. Reconstrói o Docker.");
+        setLoadingConvs(false);
+      });
+  }
+
   useEffect(() => {
-    if (tab === "messages") {
-      api.admin.getConversations()
-        .then(setConvList)
-        .catch(console.error);
-    }
+    if (tab === "messages") loadConversations();
   }, [tab]);
 
   useEffect(() => {
@@ -194,6 +206,24 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       if (stats) setStats({ ...stats, activeJobs: Math.max(0, stats.activeJobs - 1) });
     } catch (e: any) { alert(e.message || "Erro ao fechar."); }
     finally { setClosingJob(null); }
+  }
+
+  async function handleSendWarning(toUserId: number) {
+    if (!warnInput.trim() || !selectedConv) return;
+    setSendingWarn(true);
+    try {
+      await api.admin.sendMessage(toUserId, warnInput.trim());
+      setWarnInput("");
+      // Refresh messages in this conversation
+      const data = await api.admin.getConversationMessages(
+        selectedConv.user1Id, selectedConv.user2Id, selectedConv.jobId ?? undefined
+      );
+      setConvMessages(data);
+    } catch (err: any) {
+      alert(err?.message || "Erro ao enviar aviso.");
+    } finally {
+      setSendingWarn(false);
+    }
   }
 
   // Filtered lists
@@ -513,7 +543,13 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                   </span>
                 )}
               </h2>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button onClick={loadConversations} disabled={loadingConvs}
+                  style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: "var(--surface2)", color: "var(--muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <RefreshCw size={12} style={{ animation: loadingConvs ? "spin 1s linear infinite" : "none" }} />
+                  Atualizar
+                </button>
                 {(["all", "reported"] as const).map((f) => (
                   <button key={f} onClick={() => { setConvFilter(f); setSelectedConv(null); }}
                     style={{
@@ -535,7 +571,24 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                 width: 280, flexShrink: 0, background: "var(--surface)", border: "1px solid var(--line)",
                 borderRadius: 14, overflowY: "auto", display: "flex", flexDirection: "column",
               }}>
-                {convList
+                {convError && (
+                <div style={{ padding: "12px 14px", background: "rgba(239,68,68,0.08)", borderBottom: "1px solid rgba(239,68,68,0.2)" }}>
+                  <div style={{ fontSize: 12, color: "#ef4444", fontWeight: 700 }}>⚠️ Erro ao carregar</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{convError}</div>
+                  <button onClick={loadConversations}
+                    style={{ marginTop: 6, fontSize: 11, padding: "3px 8px", borderRadius: 6,
+                      border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)",
+                      color: "#ef4444", cursor: "pointer" }}>
+                    Tentar novamente
+                  </button>
+                </div>
+              )}
+              {loadingConvs && convList.length === 0 && !convError && (
+                <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                  A carregar conversas...
+                </div>
+              )}
+              {convList
                   .filter(c => convFilter === "all" || c.reportCount > 0)
                   .map((conv) => {
                     const isActive = selectedConv?.user1Id === conv.user1Id && selectedConv?.user2Id === conv.user2Id && selectedConv?.jobId === conv.jobId;
@@ -611,8 +664,24 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                         <div style={{ textAlign: "center", color: "var(--muted)", paddingTop: 40 }}>Sem mensagens nesta conversa.</div>
                       ) : convMessages.map((msg) => {
                         const isUser1 = msg.fromUserId === selectedConv.user1Id;
-                        const isSpecial = msg.messageType !== "text";
-                        if (isSpecial) {
+
+                        // Admin warning — centred amber banner
+                        if (msg.messageType === "admin_warning") {
+                          return (
+                            <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
+                              <div style={{ padding: "7px 16px", borderRadius: 10, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)", maxWidth: "85%" }}>
+                                <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 2 }}>⚠️ Aviso do Admin ({msg.fromName})</div>
+                                <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.4 }}>{msg.content}</div>
+                                <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "right", marginTop: 3 }}>
+                                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        // System events (payment, application, etc.)
+                        if (msg.messageType !== "text") {
                           const color = msg.messageType === "payment_escrow" || msg.messageType === "payment_released" ? "#22c97a" : msg.messageType === "application" ? "#8b5cf6" : "#6366f1";
                           return (
                             <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
@@ -623,6 +692,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                             </div>
                           );
                         }
+
                         return (
                           <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: isUser1 ? "flex-start" : "flex-end" }}>
                             <span style={{ fontSize: 10, color: "var(--muted)", marginBottom: 2, paddingLeft: 4, paddingRight: 4 }}>{msg.fromName}</span>
@@ -640,6 +710,46 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                           </div>
                         );
                       })}
+                    </div>
+                    {/* Admin warning compose */}
+                    <div style={{ padding: "10px 14px", borderTop: "1px solid var(--line)", background: "rgba(245,158,11,0.05)", flexShrink: 0 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", marginBottom: 6 }}>⚠️ Enviar Aviso</div>
+                      <textarea
+                        value={warnInput}
+                        onChange={(e) => setWarnInput(e.target.value)}
+                        placeholder="Escreva o aviso para o utilizador..."
+                        rows={2}
+                        style={{
+                          width: "100%", borderRadius: 8, border: "1px solid var(--line)",
+                          background: "var(--bg)", color: "var(--ink)", fontSize: 13,
+                          padding: "7px 10px", resize: "none", fontFamily: "inherit",
+                          outline: "none", boxSizing: "border-box",
+                        }}
+                      />
+                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                        <button
+                          onClick={() => handleSendWarning(selectedConv!.user1Id)}
+                          disabled={!warnInput.trim() || sendingWarn}
+                          style={{
+                            flex: 1, padding: "6px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+                            background: "#f59e0b", color: "#000", fontSize: 12, fontWeight: 700,
+                            opacity: !warnInput.trim() || sendingWarn ? 0.45 : 1,
+                          }}
+                        >
+                          → {selectedConv!.user1Name}
+                        </button>
+                        <button
+                          onClick={() => handleSendWarning(selectedConv!.user2Id)}
+                          disabled={!warnInput.trim() || sendingWarn}
+                          style={{
+                            flex: 1, padding: "6px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+                            background: "#f59e0b", color: "#000", fontSize: 12, fontWeight: 700,
+                            opacity: !warnInput.trim() || sendingWarn ? 0.45 : 1,
+                          }}
+                        >
+                          → {selectedConv!.user2Name}
+                        </button>
+                      </div>
                     </div>
                   </>
                 ) : (

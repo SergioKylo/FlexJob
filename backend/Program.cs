@@ -1430,14 +1430,15 @@ webApp.MapGet("/api/admin/conversations", (HttpContext context) =>
     if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
 
     // Full query with reports count
+    // ANY_VALUE() is needed for MySQL 8 ONLY_FULL_GROUP_BY mode on joined columns
     const string fullSql = @"
         SELECT
             LEAST(m.from_user_id, m.to_user_id)    AS user1_id,
             GREATEST(m.from_user_id, m.to_user_id) AS user2_id,
             COALESCE(m.job_id, 0)                   AS job_id,
-            u1.name  AS user1_name,
-            u2.name  AS user2_name,
-            j.title  AS job_title,
+            ANY_VALUE(u1.name)  AS user1_name,
+            ANY_VALUE(u2.name)  AS user2_name,
+            ANY_VALUE(j.title)  AS job_title,
             MAX(m.created_at)     AS last_message_at,
             COUNT(DISTINCT m.id)  AS message_count,
             COUNT(DISTINCT r.id)  AS report_count
@@ -1462,9 +1463,9 @@ webApp.MapGet("/api/admin/conversations", (HttpContext context) =>
             LEAST(m.from_user_id, m.to_user_id)    AS user1_id,
             GREATEST(m.from_user_id, m.to_user_id) AS user2_id,
             COALESCE(m.job_id, 0)                   AS job_id,
-            u1.name  AS user1_name,
-            u2.name  AS user2_name,
-            j.title  AS job_title,
+            ANY_VALUE(u1.name)  AS user1_name,
+            ANY_VALUE(u2.name)  AS user2_name,
+            ANY_VALUE(j.title)  AS job_title,
             MAX(m.created_at)     AS last_message_at,
             COUNT(DISTINCT m.id)  AS message_count,
             0                     AS report_count
@@ -1526,6 +1527,34 @@ webApp.MapGet("/api/admin/conversation-messages", (HttpContext context) =>
         messageType = r["message_type"]?.ToString(),
         createdAt   = r["created_at"]?.ToString(),
     }));
+});
+
+// --- Admin: send a warning message to a specific user ---
+record AdminSendMsgRequest(int ToUserId, string Content);
+
+webApp.MapPost("/api/admin/send-message", (HttpContext context, AdminSendMsgRequest request) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var userIdStr = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdStr == null) return Results.Unauthorized();
+    int adminId = int.Parse(userIdStr);
+
+    if (string.IsNullOrWhiteSpace(request.Content))
+        return Results.BadRequest(new { message = "Conteúdo vazio." });
+
+    Database.ExecuteNonQuery(
+        @"INSERT INTO messages (from_user_id, to_user_id, content, message_type, created_at)
+          VALUES (@from, @to, @content, 'admin_warning', @now)",
+        new Dictionary<string, object>
+        {
+            { "@from", adminId },
+            { "@to",   request.ToUserId },
+            { "@content", request.Content },
+            { "@now",  DateTime.UtcNow.ToString("o") },
+        });
+
+    return Results.Ok(new { message = "Aviso enviado com sucesso." });
 });
 
 // --- Wallet Endpoint ---

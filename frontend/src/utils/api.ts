@@ -312,6 +312,12 @@ export const api = {
       if (jobId != null) p.set("jobId", String(jobId));
       return request<any[]>(`/api/admin/conversation-messages?${p}`);
     },
+    async sendMessage(toUserId: number, content: string): Promise<{ message: string }> {
+      return request<any>("/api/admin/send-message", {
+        method: "POST",
+        body: { toUserId, content } as any,
+      });
+    },
   },
 };
 
