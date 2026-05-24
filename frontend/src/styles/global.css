@@ -94,6 +94,13 @@ button {
   padding-bottom: 82px;
 }
 
+/* On desktop the bottom-nav is hidden — reclaim that 82px */
+@media (min-width: 921px) {
+  .app-shell {
+    padding-bottom: 0;
+  }
+}
+
 [hidden] {
   display: none !important;
 }
@@ -497,7 +504,9 @@ small,
 .control-panel {
   display: flex;
   flex-direction: column;
-  min-height: 660px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
   padding: 14px;
 }
 
@@ -798,7 +807,8 @@ small,
 
 .map-panel {
   position: relative;
-  min-height: 660px;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -1419,21 +1429,20 @@ small,
     grid-template-columns: repeat(3, 1fr);
   }
 
-  .control-panel,
-  .map-panel {
+  .workspace {
+    height: auto;
+  }
+
+  .control-panel {
+    height: auto;
     min-height: auto;
+    overflow: visible;
+    order: 2;
   }
 
   .map-panel {
     height: 60vh;
     min-height: 460px;
-  }
-
-  .control-panel {
-    order: 2;
-  }
-
-  .map-panel {
     order: 1;
   }
 

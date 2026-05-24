@@ -200,20 +200,21 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
 
   return (
     <>
-      <section className="hero-band" style={{ paddingBottom: "10px" }}>
-        <div>
-          <p className="eyebrow">{isEmployer ? "Painel de Empreendedor" : "Painel de Trabalhador"}</p>
-          <h1>{isEmployer ? "Vagas de trabalho na sua região." : "Oportunidades em tempo real na sua área."}</h1>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "6px 2px 10px" }}>
+        <p className="eyebrow" style={{ margin: 0 }}>
+          {isEmployer ? "Painel de Empreendedor" : "Painel de Trabalhador"}
+        </p>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <span style={{ display: "inline-flex", gap: "4px", alignItems: "center", padding: "3px 10px", borderRadius: "999px", background: "var(--surface2)", border: "1px solid var(--line)", fontSize: "12px", fontWeight: 700, color: "var(--ink)" }}>
+            <strong>{filtered.length}</strong><small style={{ color: "var(--muted)", fontWeight: 600 }}>vagas</small>
+          </span>
+          <span style={{ display: "inline-flex", gap: "4px", alignItems: "center", padding: "3px 10px", borderRadius: "999px", background: "rgba(34,201,122,0.1)", border: "1px solid rgba(34,201,122,0.22)", fontSize: "12px", fontWeight: 700, color: "var(--green)" }}>
+            ★ {user.rating?.toFixed(1) ?? "5.0"}
+          </span>
         </div>
-        <div className="hero-stats">
-          <span><strong>{filtered.length}</strong><small>vagas disponíveis</small></span>
-          <span><strong>{user.rating?.toFixed(1) ?? "5.0"}</strong><small>A minha avaliação</small></span>
-          <span><strong>€{(user.walletBalance ?? 0).toFixed(0)}</strong><small>na carteira</small></span>
-        </div>
-      </section>
+      </div>
 
-
-      <section className="workspace">
+      <section className="workspace" style={{ height: "calc(100dvh - 155px)" }}>
         <aside className="control-panel">
           {/* User Specific Quick Controls */}
           {isEmployer && (
