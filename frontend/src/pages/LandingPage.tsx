@@ -56,6 +56,23 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
     }
   }
 
+  // Direct login for demo buttons — bypasses React state timing so click = instant login
+  async function loginAsDemo(demoEmail: string, demoPassword: string) {
+    setError(null);
+    setLoading(true);
+    setEmail(demoEmail);
+    setPassword(demoPassword);
+    setAuthMode("login");
+    try {
+      const loggedInUser = await api.login(demoEmail, demoPassword);
+      onLogin(loggedInUser);
+    } catch (err: any) {
+      setError(err.message || "Ocorreu um erro. Verifique os seus dados.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <section className="landing-shell">
       {/* Nav */}
@@ -201,7 +218,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
                     <button
                       key={acc.email}
                       type="button"
-                      onClick={() => { setEmail(acc.email); setPassword("123456"); setAuthMode("login"); }}
+                      onClick={() => loginAsDemo(acc.email, "123456")}
                       style={{ padding: "0.45rem 0.6rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: "0.75rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s" }}
                     >
                       <strong style={{ display: "block", fontSize: "0.78rem" }}>{acc.label}</strong>
@@ -211,7 +228,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
                 </div>
                 <button
                   type="button"
-                  onClick={() => { setEmail("admin@flexjob.com"); setPassword("123456"); setAuthMode("login"); }}
+                  onClick={() => loginAsDemo("admin@flexjob.com", "123456")}
                   style={{ padding: "0.45rem 0.6rem", borderRadius: "8px", border: "1px solid rgba(255,210,51,0.35)", background: "rgba(255,210,51,0.07)", color: "var(--ink)", fontSize: "0.75rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s", display: "flex", alignItems: "center", gap: "0.5rem" }}
                 >
                   <strong style={{ fontSize: "0.78rem" }}>🛡️ Admin</strong>
