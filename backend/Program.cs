@@ -1429,11 +1429,12 @@ webApp.MapGet("/api/admin/conversations", (HttpContext context) =>
 {
     if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
 
-    var rows = Database.ExecuteQuery(@"
+    // Full query with reports count
+    const string fullSql = @"
         SELECT
             LEAST(m.from_user_id, m.to_user_id)    AS user1_id,
             GREATEST(m.from_user_id, m.to_user_id) AS user2_id,
-            m.job_id,
+            COALESCE(m.job_id, 0)                   AS job_id,
             u1.name  AS user1_name,
             u2.name  AS user2_name,
             j.title  AS job_title,
@@ -1445,25 +1446,50 @@ webApp.MapGet("/api/admin/conversations", (HttpContext context) =>
         JOIN  users u2 ON u2.id = GREATEST(m.from_user_id, m.to_user_id)
         LEFT JOIN jobs j ON j.id = m.job_id
         LEFT JOIN reports r ON
-            (r.reporter_id    = LEAST(m.from_user_id, m.to_user_id) OR
-             r.reporter_id    = GREATEST(m.from_user_id, m.to_user_id))
+            (r.reporter_id = LEAST(m.from_user_id, m.to_user_id)
+             OR r.reporter_id = GREATEST(m.from_user_id, m.to_user_id))
             AND
-            (r.reported_user_id = LEAST(m.from_user_id, m.to_user_id) OR
-             r.reported_user_id = GREATEST(m.from_user_id, m.to_user_id))
+            (r.reported_user_id = LEAST(m.from_user_id, m.to_user_id)
+             OR r.reported_user_id = GREATEST(m.from_user_id, m.to_user_id))
         GROUP BY LEAST(m.from_user_id, m.to_user_id),
                  GREATEST(m.from_user_id, m.to_user_id),
-                 m.job_id
-        ORDER BY MAX(m.created_at) DESC");
+                 COALESCE(m.job_id, 0)
+        ORDER BY MAX(m.created_at) DESC";
+
+    // Fallback query without reports (in case reports table doesn't exist yet)
+    const string fallbackSql = @"
+        SELECT
+            LEAST(m.from_user_id, m.to_user_id)    AS user1_id,
+            GREATEST(m.from_user_id, m.to_user_id) AS user2_id,
+            COALESCE(m.job_id, 0)                   AS job_id,
+            u1.name  AS user1_name,
+            u2.name  AS user2_name,
+            j.title  AS job_title,
+            MAX(m.created_at)     AS last_message_at,
+            COUNT(DISTINCT m.id)  AS message_count,
+            0                     AS report_count
+        FROM messages m
+        JOIN  users u1 ON u1.id = LEAST(m.from_user_id, m.to_user_id)
+        JOIN  users u2 ON u2.id = GREATEST(m.from_user_id, m.to_user_id)
+        LEFT JOIN jobs j ON j.id = m.job_id
+        GROUP BY LEAST(m.from_user_id, m.to_user_id),
+                 GREATEST(m.from_user_id, m.to_user_id),
+                 COALESCE(m.job_id, 0)
+        ORDER BY MAX(m.created_at) DESC";
+
+    List<Dictionary<string, object?>> rows;
+    try { rows = Database.ExecuteQuery(fullSql); }
+    catch { rows = Database.ExecuteQuery(fallbackSql); }
 
     return Results.Ok(rows.Select(r => new
     {
         user1Id       = Convert.ToInt32(r["user1_id"]),
         user2Id       = Convert.ToInt32(r["user2_id"]),
-        jobId         = r["job_id"] != null && r["job_id"] != DBNull.Value ? (int?)Convert.ToInt32(r["job_id"]) : null,
-        user1Name     = r["user1_name"]?.ToString(),
-        user2Name     = r["user2_name"]?.ToString(),
+        jobId         = Convert.ToInt32(r["job_id"]) > 0 ? (int?)Convert.ToInt32(r["job_id"]) : null,
+        user1Name     = r["user1_name"]?.ToString() ?? "",
+        user2Name     = r["user2_name"]?.ToString() ?? "",
         jobTitle      = r["job_title"]?.ToString(),
-        lastMessageAt = r["last_message_at"]?.ToString(),
+        lastMessageAt = r["last_message_at"]?.ToString() ?? "",
         messageCount  = Convert.ToInt32(r["message_count"]),
         reportCount   = Convert.ToInt32(r["report_count"]),
     }));
