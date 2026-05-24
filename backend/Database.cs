@@ -178,23 +178,85 @@ public static class Database
             Console.WriteLine($"Error seeding database: {ex.Message}");
         }
 
-        // Always ensure admin account exists (for databases seeded before admin was added)
+        // Always ensure admin account exists and has correct password/role
         try
         {
+            string pwhash = Hash("123456");
+            string nowStr = DateTime.UtcNow.ToString("o");
             var adminCheck = ExecuteQuery("SELECT id FROM users WHERE email = 'admin@flexjob.com'");
             if (adminCheck.Count == 0)
             {
-                string pwhash = Hash("123456");
                 ExecuteNonQuery(
                     @"INSERT INTO users (name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
                       VALUES ('Admin FlexJob', 'admin@flexjob.com', @hash, 'admin', 'https://i.pravatar.cc/150?img=8', 'Administrador da plataforma FlexJob.', 5.0, 0, 38.7169, -9.1399, @now)",
-                    new() { { "@hash", pwhash }, { "@now", DateTime.UtcNow.ToString("o") } });
+                    new() { { "@hash", pwhash }, { "@now", nowStr } });
                 Console.WriteLine("Admin user created.");
+            }
+            else
+            {
+                // Always reset password hash + role to guarantee login works
+                ExecuteNonQuery(
+                    "UPDATE users SET password_hash = @hash, role = 'admin' WHERE email = 'admin@flexjob.com'",
+                    new() { { "@hash", pwhash } });
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Warning: could not ensure admin user: {ex.Message}");
+        }
+
+        // Ensure Braga users and jobs exist (added in later seed revision)
+        try
+        {
+            string pwhash2 = Hash("123456");
+            string now2 = DateTime.UtcNow.ToString("o");
+            ExecuteNonQuery(@"
+                INSERT IGNORE INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at) VALUES
+                (15, 'Braga Eventos & Catering', 'bragaevents@email.com', @hash, 'employer',
+                    'https://i.pravatar.cc/150?img=11',
+                    'Empresa local de eventos, casamentos e catering na região de Braga. Qualidade e tradição minhota.', 4.7, 350.0, 41.5454, -8.4265, @now),
+                (16, 'Tiago Bento', 'tiago@email.com', @hash, 'worker',
+                    'https://i.pravatar.cc/150?img=52',
+                    'Estudante universitário em Braga. Disponível para eventos, catering e apoio geral. Energético e pontual.', 4.7, 0.0, 41.5510, -8.4310, @now),
+                (17, 'Joana Vieira', 'joana@email.com', @hash, 'worker',
+                    'https://i.pravatar.cc/150?img=39',
+                    'Experiência em restauração e organização de eventos. Natural de Braga, conheço a cidade na perfeição.', 4.8, 20.0, 41.5400, -8.4200, @now)",
+                new() { { "@hash", pwhash2 }, { "@now", now2 } });
+
+            ExecuteNonQuery(@"
+                INSERT IGNORE INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active) VALUES
+                (16, 41.5510, -8.4310, 10.0, '10:00', '22:00', 10.0, 1),
+                (17, 41.5400, -8.4200,  8.0, '09:00', '20:00', 11.0, 1)");
+
+            string ragaPhoto2 = "https://picsum.photos/seed/braga2026/400/220";
+            ExecuteNonQuery(@"
+                INSERT IGNORE INTO jobs (id, title, description, category, lat, lng, address, pay, pay_type, duration, status, payment_status, payment_amount, employer_id, worker_id, work_date, photo, created_at) VALUES
+                (16, 'Barman em Festa Académica',
+                    'Servir bebidas e cocktails em festa de final de curso na Universidade do Minho. Ambiente animado e jovem.',
+                    'restauracao', 41.5454, -8.4265, 'Universidade do Minho, Campus de Gualtar, Braga',
+                    11.0, 'hourly', '5 horas', 'open', 'none', 0, 15, NULL, '2026-06-13', @photo, @now),
+                (17, 'Apoio a Casamento em Quinta',
+                    'Receção de convidados, montagem de mesas e apoio durante o jantar de casamento. Traje formal exigido.',
+                    'eventos', 41.5600, -8.3900, 'Quinta dos Carvalhos, Braga',
+                    13.0, 'hourly', '8 horas', 'open', 'none', 0, 15, NULL, '2026-06-28', @photo, @now),
+                (18, 'Auxiliar de Cozinha em Restaurante',
+                    'Preparação de mise en place, lavagem de louça e apoio ao chef. Ritmo intenso ao almoço e jantar.',
+                    'restauracao', 41.5495, -8.4280, 'Rua do Souto 48, Centro Histórico, Braga',
+                    10.5, 'hourly', '4 horas', 'open', 'none', 0, 15, NULL, '2026-05-30', @photo, @now),
+                (19, 'Promotor em Centro Comercial',
+                    'Promover nova linha de produtos numa grande superfície comercial. Perfil simpático e comunicativo.',
+                    'retalho', 41.5310, -8.4150, 'Braga Parque, Braga',
+                    9.5, 'hourly', '6 horas', 'open', 'none', 0, 15, NULL, '2026-06-05', @photo, @now),
+                (20, 'Limpeza Pós-Evento em Pavilhão',
+                    'Limpeza geral do pavilhão após evento desportivo. Varrer, lavar pavimento e recolher lixo.',
+                    'casa', 41.5550, -8.4100, 'Pavilhão Desportivo Municipal, Braga',
+                    10.0, 'hourly', '3 horas', 'open', 'none', 0, 15, NULL, '2026-05-27', @photo, @now)",
+                new() { { "@photo", ragaPhoto2 }, { "@now", now2 } });
+            Console.WriteLine("Braga data migration applied.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: could not apply Braga migration: {ex.Message}");
         }
     }
 

@@ -708,6 +708,11 @@ webApp.MapPost("/api/workers/availability", (HttpContext context, AvailabilityRe
             { "@isActive", request.IsActive ? 1 : 0 }
         });
 
+    // Also update the user's main location so the map reflects the new region
+    Database.ExecuteNonQuery(
+        "UPDATE users SET location_lat = @lat, location_lng = @lng WHERE id = @userId",
+        new() { { "@lat", request.Lat }, { "@lng", request.Lng }, { "@userId", userId } });
+
     return Results.Ok(new { message = "Disponibilidade atualizada!" });
 });
 

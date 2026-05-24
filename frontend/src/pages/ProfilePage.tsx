@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Star, MapPin, Briefcase, User, Clock, CreditCard, Edit2, X, Check, Camera, Wallet } from "lucide-react";
+import { Star, MapPin, Briefcase, User, Clock, CreditCard, Edit2, X, Check, Camera } from "lucide-react";
 import type { User as UserType } from "../types";
 import type { TranslationKey } from "../i18n/translations";
 import { api } from "../utils/api";
@@ -107,6 +107,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
     setSavingRegion(true);
     try {
       await api.updateAvailability({ lat: r.lat, lng: r.lng, radius: 10, startTime: "09:00", endTime: "18:00", hourlyRate: 10, isActive: true });
+      onUserUpdate?.({ lat: r.lat, lng: r.lng });
       setRegionSaved(true);
       setEditRegion(false);
       setTimeout(() => setRegionSaved(false), 3000);
@@ -172,20 +173,6 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
         marginBottom: "1.5rem", display: "flex", gap: "1.5rem", alignItems: "center", flexWrap: "wrap",
         position: "relative",
       }}>
-        {/* Wallet balance badge — top right */}
-        <div style={{
-          position: "absolute", top: "1rem", right: "1rem",
-          display: "flex", alignItems: "center", gap: "0.35rem",
-          background: isWorker ? "rgba(16,185,129,0.12)" : "rgba(99,102,241,0.12)",
-          border: `1px solid ${isWorker ? "rgba(16,185,129,0.3)" : "rgba(99,102,241,0.3)"}`,
-          borderRadius: "12px", padding: "0.35rem 0.75rem",
-        }}>
-          <Wallet size={13} style={{ color: isWorker ? "#10b981" : "#6366f1" }} />
-          <span style={{ fontSize: "0.85rem", fontWeight: "800", color: isWorker ? "#10b981" : "#6366f1" }}>
-            €{(user.walletBalance ?? 0).toFixed(2)}
-          </span>
-          <span style={{ fontSize: "0.7rem", color: "var(--muted)" }}>carteira</span>
-        </div>
         {/* Avatar with upload overlay */}
         <div style={{ position: "relative", flexShrink: 0 }}>
           <div style={{

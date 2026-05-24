@@ -44,10 +44,10 @@ export const api = {
     });
   },
 
-  async login(email: string): Promise<User> {
+  async login(email: string, password = "123456"): Promise<User> {
     return request<User>("/api/auth/login", {
       method: "POST",
-      body: { email, password: "123456" } as any, // hardcoding a simple password
+      body: { email, password } as any,
     });
   },
 

@@ -43,10 +43,10 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
       if (authMode === "signup") {
         const selectedRegion = REGIONS.find((r) => r.name === region) || REGIONS[0];
         await api.register(name, email, role, selectedRegion.lat, selectedRegion.lng, bio, role === "worker" ? hourlyRate : 0);
-        const loggedInUser = await api.login(email);
+        const loggedInUser = await api.login(email, password);
         onLogin(loggedInUser);
       } else {
-        const loggedInUser = await api.login(email);
+        const loggedInUser = await api.login(email, password);
         onLogin(loggedInUser);
       }
     } catch (err: any) {
@@ -192,22 +192,31 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
               <p style={{ margin: "0 0 0.5rem", fontSize: "0.7rem", fontWeight: "700", color: "var(--yellow-dark)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                 Contas de demonstração (senha: 123456)
               </p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.4rem" }}>
-                {[
-                  { label: "💼 Trabalhadora", email: "ines@email.com" },
-                  { label: "🏢 Empregador",   email: "cafeaurora@email.com" },
-                  { label: "🛡️ Admin",        email: "admin@flexjob.com" },
-                ].map((acc) => (
-                  <button
-                    key={acc.email}
-                    type="button"
-                    onClick={() => { setEmail(acc.email); setPassword("123456"); setAuthMode("login"); }}
-                    style={{ padding: "0.45rem 0.6rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: "0.75rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s" }}
-                  >
-                    <strong style={{ display: "block", fontSize: "0.78rem" }}>{acc.label}</strong>
-                    <small style={{ color: "var(--muted)" }}>{acc.email}</small>
-                  </button>
-                ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem" }}>
+                  {[
+                    { label: "💼 Trabalhadora", email: "ines@email.com" },
+                    { label: "🏢 Empregador",   email: "cafeaurora@email.com" },
+                  ].map((acc) => (
+                    <button
+                      key={acc.email}
+                      type="button"
+                      onClick={() => { setEmail(acc.email); setPassword("123456"); setAuthMode("login"); }}
+                      style={{ padding: "0.45rem 0.6rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: "0.75rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s" }}
+                    >
+                      <strong style={{ display: "block", fontSize: "0.78rem" }}>{acc.label}</strong>
+                      <small style={{ color: "var(--muted)" }}>{acc.email}</small>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setEmail("admin@flexjob.com"); setPassword("123456"); setAuthMode("login"); }}
+                  style={{ padding: "0.45rem 0.6rem", borderRadius: "8px", border: "1px solid rgba(255,210,51,0.35)", background: "rgba(255,210,51,0.07)", color: "var(--ink)", fontSize: "0.75rem", cursor: "pointer", textAlign: "left", transition: "background 0.15s", display: "flex", alignItems: "center", gap: "0.5rem" }}
+                >
+                  <strong style={{ fontSize: "0.78rem" }}>🛡️ Admin</strong>
+                  <small style={{ color: "var(--muted)" }}>admin@flexjob.com</small>
+                </button>
               </div>
             </div>
           </form>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Globe2, LogOut, Map, Briefcase, Users, MessageSquare, Wallet, User, Sun, Moon } from "lucide-react";
+import { Globe2, LogOut, Map, Briefcase, Users, MessageSquare, Wallet, User, Sun, Moon, Euro } from "lucide-react";
 import { translations, type TranslationKey } from "./i18n/translations";
 import { WorkersPage } from "./pages/WorkersPage";
 import { JobsPage } from "./pages/JobsPage";
@@ -80,6 +80,7 @@ export function App() {
             city: j.address || "Local",
             pay: j.pay,
             createdAt: new Date(j.createdAt).toLocaleDateString(),
+            status: j.status,
           })));
         })
         .catch((err) => console.error("Error loading employer jobs:", err));
@@ -98,6 +99,7 @@ export function App() {
             city: j.address || "Local",
             pay: j.pay,
             createdAt: new Date(j.createdAt).toLocaleDateString(),
+            status: j.status,
           })));
         })
         .catch((err) => console.error("Error loading worker jobs:", err));
@@ -187,6 +189,7 @@ export function App() {
         needs={needs}
         matches={matches}
         t={t}
+        user={user}
         onCreateMatch={createMatch}
         onStartChat={(pId, pName, pAvatar, jId) => openChat(pId, pName, pAvatar, jId)}
       />
@@ -196,7 +199,8 @@ export function App() {
         workers={workers}
         t={t}
         user={user}
-        onStartChat={(pId, pName, pAvatar) => openChat(pId, pName, pAvatar)}
+        employerJobs={matches.filter((m) => m.status === "open")}
+        onStartChat={(pId, pName, pAvatar, jId) => openChat(pId, pName, pAvatar, jId)}
       />
     ),
     messages: <MessagesPage user={user} />,
@@ -225,6 +229,18 @@ export function App() {
         </nav>
 
         <div className="top-actions">
+          {/* Wallet balance pill */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: "0.3rem",
+            padding: "0.3rem 0.75rem", borderRadius: "20px",
+            background: user.role === "worker" ? "rgba(16,185,129,0.12)" : "rgba(99,102,241,0.12)",
+            border: `1px solid ${user.role === "worker" ? "rgba(16,185,129,0.3)" : "rgba(99,102,241,0.3)"}`,
+          }}>
+            <Euro size={12} style={{ color: user.role === "worker" ? "#10b981" : "#6366f1" }} />
+            <span style={{ fontSize: "0.82rem", fontWeight: "800", color: user.role === "worker" ? "#10b981" : "#6366f1" }}>
+              {(user.walletBalance ?? 0).toFixed(2)}
+            </span>
+          </div>
           <button className="icon-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle theme">
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>

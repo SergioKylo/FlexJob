@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
-import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
-import { Plus, Search, MapPin, DollarSign, Clock, Star, CheckCircle, Navigation, X, MessageCircle } from "lucide-react";
+import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
+import { Plus, Search, MapPin, DollarSign, Star, CheckCircle, X, MessageCircle } from "lucide-react";
 import type { MatchRecord, Opportunity, SortMode, WorkMode, User } from "../types";
 import type { TranslationKey } from "../i18n/translations";
 import { sortOpportunities } from "../utils/matching";
@@ -50,17 +50,6 @@ function FlyToMarker({ lat, lng }: { lat: number; lng: number }) {
   return null;
 }
 
-function MapClickHandler({ onClick, enabled }: { onClick: (latlng: L.LatLng) => void; enabled: boolean }) {
-  useMapEvents({
-    click(e) {
-      if (enabled) {
-        onClick(e.latlng);
-      }
-    },
-  });
-  return null;
-}
-
 function iconFor(item: Opportunity, mode: WorkMode, active: boolean) {
   const content = mode === "work" ? `★${item.rating.toFixed(1)}` : `${item.pay}€`;
   return L.divIcon({
@@ -98,17 +87,6 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
   const [jobPhoto, setJobPhoto] = useState<string>("");
   const [geocoding, setGeocoding] = useState(false);
 
-  // Worker - Availability Flow
-  const [showAvailabilityForm, setShowAvailabilityForm] = useState(false);
-  const [isPlacingAvailabilityPin, setIsPlacingAvailabilityPin] = useState(false);
-  const [availLat, setAvailLat] = useState<number>(user.lat ?? 38.7223);
-  const [availLng, setAvailLng] = useState<number>(user.lng ?? -9.1393);
-  const [availRadius, setAvailRadius] = useState(5);
-  const [availRate, setAvailRate] = useState(10);
-  const [availStart, setAvailStart] = useState("09:00");
-  const [availEnd, setAvailEnd] = useState("18:00");
-  const [availActive, setAvailActive] = useState(true);
-
   const [toast, setToast] = useState<string | null>(null);
 
   // Fetch initial/refreshed data
@@ -126,26 +104,6 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
 
   useEffect(() => {
     loadData();
-    // Load worker availability details if user is worker
-    if (user.role === "worker") {
-      api.getWorkers(user.lat, user.lng)
-        .then((list) => {
-          const mine = list.find((w) => w.id === user.id);
-          if (mine) {
-            setAvailLat(mine.lat);
-            setAvailLng(mine.lng);
-            setAvailRadius(mine.hours);
-            setAvailRate(mine.pay);
-            setAvailActive(true);
-            if (mine.time.includes(" - ")) {
-              const [start, end] = mine.time.split(" - ");
-              setAvailStart(start);
-              setAvailEnd(end);
-            }
-          }
-        })
-        .catch(err => console.error(err));
-    }
   }, [user]);
 
 
@@ -172,16 +130,6 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
 
   function isMatched(item: Opportunity) {
     return matches.some((match) => match.itemId === item.id && match.mode === effectiveMode);
-  }
-
-  // Handle map click (strictly for Worker availability pin location placement)
-  function handleMapClick(latlng: L.LatLng) {
-    if (isPlacingAvailabilityPin) {
-      setAvailLat(latlng.lat);
-      setAvailLng(latlng.lng);
-      setIsPlacingAvailabilityPin(false);
-      showToast("Localização da disponibilidade selecionada!");
-    }
   }
 
   // Handle posting a job
@@ -249,27 +197,6 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
     }
   }
 
-  // Handle saving worker availability
-  async function handleSaveAvailability(e: React.FormEvent) {
-    e.preventDefault();
-    try {
-      await api.updateAvailability({
-        lat: availLat,
-        lng: availLng,
-        radius: availRadius,
-        startTime: availStart,
-        endTime: availEnd,
-        hourlyRate: availRate,
-        isActive: availActive,
-      });
-      setShowAvailabilityForm(false);
-      showToast("A sua disponibilidade foi atualizada com sucesso!");
-      
-      if (onRefresh) onRefresh();
-    } catch (err: any) {
-      alert(err.message || "Erro ao atualizar disponibilidade.");
-    }
-  }
 
   return (
     <>
@@ -285,38 +212,14 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
         </div>
       </section>
 
-      {/* Placing pin banners */}
-      <div style={{ position: "relative", width: "100%", height: 0, zIndex: 1000 }}>
-        {isPlacingAvailabilityPin && (
-          <div style={{
-            position: "absolute",
-            top: "10px",
-            left: "50%",
-            transform: "translateX(-50%)",
-            background: "var(--green)",
-            color: "white",
-            padding: "10px 20px",
-            borderRadius: "20px",
-            fontWeight: "bold",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
-            fontSize: "0.95rem",
-            display: "flex",
-            alignItems: "center",
-            gap: "8px"
-          }}>
-            <Navigation size={18} />
-            <span>📍 Clique no mapa para definir onde quer trabalhar</span>
-          </div>
-        )}
-      </div>
 
       <section className="workspace">
         <aside className="control-panel">
           {/* User Specific Quick Controls */}
-          {isEmployer ? (
+          {isEmployer && (
             <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
-              <button 
-                className="primary full" 
+              <button
+                className="primary full"
                 onClick={() => dialogRef.current?.showModal()}
                 style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", background: "var(--yellow)", color: "#181506" }}
               >
@@ -324,70 +227,9 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
                 Publicar Vaga
               </button>
             </div>
-          ) : (
-            <div style={{ display: "flex", gap: "10px", marginBottom: "16px" }}>
-              <button 
-                className="secondary full" 
-                onClick={() => setShowAvailabilityForm(!showAvailabilityForm)}
-                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", background: showAvailabilityForm ? "var(--ink)" : "var(--surface)", color: showAvailabilityForm ? "white" : "var(--ink)" }}
-              >
-                <Clock size={18} />
-                {showAvailabilityForm ? "Ver Mapa e Vagas" : "Definir a Minha Disponibilidade"}
-              </button>
-            </div>
           )}
 
-          {/* Form to configure worker availability */}
-          {!isEmployer && showAvailabilityForm ? (
-            <form onSubmit={handleSaveAvailability} className="quick-form" style={{ background: "var(--surface)", padding: "16px", border: "1px solid var(--line)" }}>
-              <h3>Definir Minha Disponibilidade</h3>
-              <p style={{ fontSize: "13px", color: "var(--muted)", marginBottom: "14px" }}>
-                Os empreendedores poderão ver a sua localização e nota média no mapa.
-              </p>
-              
-              <div style={{ display: "flex", gap: "10px", marginBottom: "12px" }}>
-                <button 
-                  type="button" 
-                  className="secondary small full" 
-                  onClick={() => setIsPlacingAvailabilityPin(true)}
-                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}
-                >
-                  <MapPin size={16} />
-                  {isPlacingAvailabilityPin ? "Aguardando clique..." : "Selecionar Posição no Mapa"}
-                </button>
-              </div>
-
-              <div className="form-grid">
-                <label className="form-row">
-                  <span>Preço Base (EUR/h)</span>
-                  <input required type="number" value={availRate} onChange={e => setAvailRate(Number(e.target.value))} />
-                </label>
-                <label className="form-row">
-                  <span>Raio de Ação (km)</span>
-                  <input required type="number" value={availRadius} onChange={e => setAvailRadius(Number(e.target.value))} />
-                </label>
-              </div>
-
-              <div className="form-grid" style={{ marginTop: "10px" }}>
-                <label className="form-row">
-                  <span>Hora Início</span>
-                  <input type="time" value={availStart} onChange={e => setAvailStart(e.target.value)} />
-                </label>
-                <label className="form-row">
-                  <span>Hora Fim</span>
-                  <input type="time" value={availEnd} onChange={e => setAvailEnd(e.target.value)} />
-                </label>
-              </div>
-
-              <label className="form-row" style={{ flexDirection: "row", alignItems: "center", gap: "8px", marginTop: "14px" }}>
-                <input type="checkbox" checked={availActive} onChange={e => setAvailActive(e.target.checked)} style={{ width: "20px", height: "20px" }} />
-                <span>Estou ativo e disponível para trabalhar hoje</span>
-              </label>
-
-              <button className="primary full" type="submit" style={{ marginTop: "16px" }}>Gravar Configurações</button>
-            </form>
-          ) : (
-            <>
+          {(<>
               {/* Search and Filters */}
               <div className="search-box">
                 <Search size={18} style={{ color: "var(--muted)" }} />
@@ -402,14 +244,18 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
                 ))}
               </div>
 
-              <div className="sort-row">
-                <label>{t("sortBy")}</label>
-                <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)}>
-                  <option value="match">{t("bestMatch")}</option>
-                  <option value="pay">{t("highestPay")}</option>
-                  <option value="distance">{t("nearest")}</option>
-                  <option value="rating">{t("bestRating")}</option>
-                </select>
+              <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", alignItems: "center", marginTop: "4px" }}>
+                <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--muted)", flexShrink: 0 }}>{t("sortBy")}:</span>
+                {(["match", "pay", "distance", "rating"] as SortMode[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSort(s)}
+                    className={`chip ${sort === s ? "active" : ""}`}
+                    style={{ fontSize: "0.72rem", padding: "2px 9px", minHeight: "24px" }}
+                  >
+                    {s === "match" ? t("bestMatch") : s === "pay" ? t("highestPay") : s === "distance" ? t("nearest") : t("bestRating")}
+                  </button>
+                ))}
               </div>
 
               {/* Job list header */}
@@ -469,7 +315,6 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
           <MapContainer center={[user.lat ?? 38.7223, user.lng ?? -9.1393]} zoom={user.lat ? 12 : 7} className="leaflet-map" zoomControl>
             <TileLayer attribution="&copy; OpenStreetMap" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <CenterMap lat={user.lat} lng={user.lng} />
-            <MapClickHandler onClick={handleMapClick} enabled={isPlacingAvailabilityPin} />
             {flyTarget && <FlyToMarker lat={flyTarget.lat} lng={flyTarget.lng} />}
 
             {/* Display list items */}
@@ -482,18 +327,6 @@ export function MapPage({ mode: initialMode, needs: initialNeeds, matches, onCre
               />
             ))}
 
-            {/* Display worker's own availability pin if editing availability */}
-            {!isEmployer && (
-              <Marker 
-                position={[availLat, availLng]}
-                icon={L.divIcon({
-                  className: "flex-marker active",
-                  html: `<span>AQUI</span>`,
-                  iconSize: [46, 46],
-                  iconAnchor: [23, 41]
-                })}
-              />
-            )}
           </MapContainer>
 
           {activeItem && (

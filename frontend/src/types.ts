@@ -50,6 +50,7 @@ export type MatchRecord = {
   city: string;
   pay: number;
   createdAt: string;
+  status?: string;
 };
 
 export type Persona = {

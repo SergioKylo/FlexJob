@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Star, MessageSquare, Search, MapPin, Clock, X, ChevronUp, ChevronDown } from "lucide-react";
-import type { Opportunity, MatchRecord } from "../types";
+import { Star, MessageSquare, Search, MapPin, Clock, X, ChevronUp, ChevronDown, Settings } from "lucide-react";
+import type { Opportunity, MatchRecord, User } from "../types";
+import { api } from "../utils/api";
 
 type JobsPageProps = {
   needs: Opportunity[];
   matches: MatchRecord[];
   t: (key: any) => string;
+  user: User;
   onCreateMatch: (item: Opportunity) => void;
   onStartChat: (partnerId: number, partnerName: string, partnerAvatar?: string, jobId?: number) => void;
 };
@@ -17,6 +19,28 @@ const CATEGORY_META: Record<string, { label: string; emoji: string; gradient: st
   casa:        { label: "Casa",        emoji: "🏠", gradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)" },
   retalho:     { label: "Retalho",     emoji: "🛍️", gradient: "linear-gradient(135deg, #ec4899 0%, #db2777 100%)" },
 };
+
+const REGIONS = [
+  { name: "Lisboa",                 lat: 38.7223, lng: -9.1393  },
+  { name: "Porto",                  lat: 41.1579, lng: -8.6291  },
+  { name: "Coimbra",                lat: 40.2033, lng: -8.4103  },
+  { name: "Braga",                  lat: 41.5454, lng: -8.4265  },
+  { name: "Faro (Algarve)",         lat: 37.0179, lng: -7.9308  },
+  { name: "Funchal (Madeira)",      lat: 32.6500, lng: -16.9    },
+  { name: "Ponta Delgada (Açores)", lat: 37.7412, lng: -25.6756 },
+  { name: "Évora (Alentejo)",       lat: 38.5714, lng: -7.9096  },
+];
+
+function nearestRegion(lat?: number, lng?: number): string {
+  if (!lat || !lng) return "Lisboa";
+  let best = REGIONS[0];
+  let bestDist = Infinity;
+  for (const r of REGIONS) {
+    const d = Math.hypot(r.lat - lat, r.lng - lng);
+    if (d < bestDist) { bestDist = d; best = r; }
+  }
+  return best.name;
+}
 
 type SortKey = "distance" | "pay" | "rating";
 
@@ -35,12 +59,46 @@ const CATEGORIES = [
   { value: "retalho",    label: "Retalho" },
 ];
 
-export function JobsPage({ needs, matches, onCreateMatch, onStartChat }: JobsPageProps) {
+export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: JobsPageProps) {
   const [searchTerm, setSearchTerm]           = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [sortKey, setSortKey]                 = useState<SortKey>("distance");
   const [sortAsc, setSortAsc]                 = useState(true);
   const [selectedJob, setSelectedJob]         = useState<Opportunity | null>(null);
+
+  // Availability form state (workers only)
+  const [showAvail, setShowAvail]   = useState(false);
+  const [availRegion, setAvailRegion] = useState(nearestRegion(user.lat, user.lng));
+  const [availRate, setAvailRate]   = useState(10);
+  const [availRadius, setAvailRadius] = useState(10);
+  const [availStart, setAvailStart] = useState("09:00");
+  const [availEnd, setAvailEnd]     = useState("18:00");
+  const [availActive, setAvailActive] = useState(true);
+  const [savingAvail, setSavingAvail] = useState(false);
+  const [availSaved, setAvailSaved] = useState(false);
+
+  async function handleSaveAvailability(e: React.FormEvent) {
+    e.preventDefault();
+    const r = REGIONS.find((x) => x.name === availRegion) ?? REGIONS[0];
+    setSavingAvail(true);
+    try {
+      await api.updateAvailability({
+        lat: r.lat, lng: r.lng,
+        radius: availRadius,
+        startTime: availStart,
+        endTime: availEnd,
+        hourlyRate: availRate,
+        isActive: availActive,
+      });
+      setAvailSaved(true);
+      setShowAvail(false);
+      setTimeout(() => setAvailSaved(false), 3000);
+    } catch (err: any) {
+      alert(err.message || "Erro ao guardar disponibilidade.");
+    } finally {
+      setSavingAvail(false);
+    }
+  }
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortAsc((v) => !v);
@@ -67,6 +125,72 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat }: JobsPag
 
   return (
     <section style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
+      {/* Availability panel for workers */}
+      {user.role === "worker" && (
+        <div style={{ marginBottom: "1.5rem", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "14px", overflow: "hidden" }}>
+          <button
+            onClick={() => setShowAvail((v) => !v)}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "0.9rem 1.25rem", background: "none", border: "none", cursor: "pointer",
+              color: "var(--ink)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
+              <Settings size={16} style={{ color: "#6366f1" }} />
+              <span style={{ fontWeight: "700", fontSize: "0.9rem" }}>Definir a Minha Disponibilidade</span>
+              {availSaved && <span style={{ fontSize: "0.75rem", color: "#22c97a", fontWeight: "600" }}>✓ Guardado!</span>}
+            </div>
+            {showAvail ? <ChevronUp size={16} style={{ color: "var(--muted)" }} /> : <ChevronDown size={16} style={{ color: "var(--muted)" }} />}
+          </button>
+
+          {showAvail && (
+            <form onSubmit={handleSaveAvailability} style={{ padding: "0 1.25rem 1.25rem", borderTop: "1px solid var(--line)" }}>
+              <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "0.75rem 0 1rem" }}>
+                Os empreendedores verão a sua localização e perfil no mapa.
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Região</span>
+                  <select value={availRegion} onChange={(e) => setAvailRegion(e.target.value)}
+                    style={{ padding: "0.5rem 0.7rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }}>
+                    {REGIONS.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Taxa (€/h)</span>
+                  <input type="number" min={5} max={200} value={availRate} onChange={(e) => setAvailRate(Number(e.target.value))}
+                    style={{ padding: "0.5rem 0.7rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }} />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Raio (km)</span>
+                  <input type="number" min={1} max={100} value={availRadius} onChange={(e) => setAvailRadius(Number(e.target.value))}
+                    style={{ padding: "0.5rem 0.7rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }} />
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Horário</span>
+                  <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
+                    <input type="time" value={availStart} onChange={(e) => setAvailStart(e.target.value)}
+                      style={{ flex: 1, padding: "0.5rem 0.4rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.82rem" }} />
+                    <span style={{ color: "var(--muted)", fontSize: "0.75rem" }}>–</span>
+                    <input type="time" value={availEnd} onChange={(e) => setAvailEnd(e.target.value)}
+                      style={{ flex: 1, padding: "0.5rem 0.4rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.82rem" }} />
+                  </div>
+                </div>
+              </div>
+              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.9rem", cursor: "pointer" }}>
+                <input type="checkbox" checked={availActive} onChange={(e) => setAvailActive(e.target.checked)} style={{ width: "16px", height: "16px" }} />
+                <span style={{ fontSize: "0.85rem", color: "var(--ink)" }}>Estou disponível para trabalhar hoje</span>
+              </label>
+              <button type="submit" disabled={savingAvail}
+                style={{ width: "100%", padding: "0.65rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", fontWeight: "700", fontSize: "0.9rem", cursor: "pointer", opacity: savingAvail ? 0.6 : 1 }}>
+                {savingAvail ? "A guardar..." : "Guardar Disponibilidade"}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ marginBottom: "2rem" }}>
         <p style={{ color: "#6366f1", letterSpacing: "1px", textTransform: "uppercase", fontSize: "0.75rem", fontWeight: "600", margin: "0 0 0.4rem" }}>

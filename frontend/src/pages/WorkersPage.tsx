@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { Star, MessageSquare, Search, MapPin, X, Clock } from "lucide-react";
-import type { Opportunity, User } from "../types";
+import { Star, MessageSquare, Search, MapPin, X, Clock, Briefcase } from "lucide-react";
+import type { Opportunity, MatchRecord, User } from "../types";
 import { api } from "../utils/api";
 
 type WorkersPageProps = {
   workers: Opportunity[];
   t: (key: any) => string;
   user: User;
-  onStartChat: (partnerId: number, partnerName: string, partnerAvatar?: string) => void;
+  employerJobs: MatchRecord[];
+  onStartChat: (partnerId: number, partnerName: string, partnerAvatar?: string, jobId?: number) => void;
 };
 
 type Review = {
@@ -29,7 +30,7 @@ const CATEGORIES = [
 
 type SortKey = "rating" | "pay" | "distance";
 
-export function WorkersPage({ workers, user, onStartChat }: WorkersPageProps) {
+export function WorkersPage({ workers, user, employerJobs, onStartChat }: WorkersPageProps) {
   const [searchTerm, setSearchTerm]             = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [sortBy, setSortBy]                     = useState<SortKey>("rating");
@@ -146,7 +147,7 @@ export function WorkersPage({ workers, user, onStartChat }: WorkersPageProps) {
             key={worker.id}
             worker={worker}
             onOpen={() => setSelectedWorker(worker)}
-            onChat={() => onStartChat(worker.id, worker.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${worker.title}`)}
+            onChat={() => onStartChat(worker.id, worker.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${worker.title}`, undefined)}
           />
         ))}
 
@@ -163,9 +164,10 @@ export function WorkersPage({ workers, user, onStartChat }: WorkersPageProps) {
           worker={selectedWorker}
           reviews={reviews}
           loadingReviews={loadingReviews}
+          employerJobs={employerJobs}
           onClose={() => setSelectedWorker(null)}
-          onChat={() => {
-            onStartChat(selectedWorker.id, selectedWorker.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${selectedWorker.title}`);
+          onChat={(jobId?: number) => {
+            onStartChat(selectedWorker.id, selectedWorker.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${selectedWorker.title}`, jobId);
             setSelectedWorker(null);
           }}
         />
@@ -281,13 +283,16 @@ function WorkerCard({ worker, onOpen, onChat }: {
 
 /* ─── Worker Detail Drawer ───────────────────────────────────────────────────── */
 
-function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat }: {
+function WorkerDetailDrawer({ worker, reviews, loadingReviews, employerJobs, onClose, onChat }: {
   worker: Opportunity;
   reviews: Review[];
   loadingReviews: boolean;
+  employerJobs: MatchRecord[];
   onClose: () => void;
-  onChat: () => void;
+  onChat: (jobId?: number) => void;
 }) {
+  const [showJobPicker, setShowJobPicker] = useState(false);
+
   return (
     <div
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)", display: "flex", justifyContent: "flex-end", zIndex: 1000 }}
@@ -343,22 +348,80 @@ function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat }
             </p>
           </div>
 
-          {/* Contact CTA */}
-          <button
-            onClick={onChat}
-            style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "0.65rem",
-              width: "100%", padding: "0.9rem", borderRadius: "12px", border: "none",
-              background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff",
-              fontWeight: "700", fontSize: "1rem", cursor: "pointer",
-              boxShadow: "0 4px 15px rgba(99,102,241,0.3)", transition: "opacity 0.15s",
-            }}
-            onMouseEnter={(e) => e.currentTarget.style.opacity = "0.88"}
-            onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
-          >
-            <MessageSquare size={18} />
-            Enviar Mensagem Direta
-          </button>
+          {/* Action buttons */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+            <button
+              onClick={() => onChat(undefined)}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "0.65rem",
+                width: "100%", padding: "0.85rem", borderRadius: "12px", border: "none",
+                background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff",
+                fontWeight: "700", fontSize: "0.95rem", cursor: "pointer",
+                boxShadow: "0 4px 15px rgba(99,102,241,0.3)", transition: "opacity 0.15s",
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.opacity = "0.88"}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
+            >
+              <MessageSquare size={16} />
+              Enviar Mensagem
+            </button>
+
+            {/* Propose job button */}
+            <button
+              onClick={() => setShowJobPicker((v) => !v)}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: "0.65rem",
+                width: "100%", padding: "0.85rem", borderRadius: "12px",
+                border: "1px solid rgba(251,191,36,0.4)",
+                background: showJobPicker ? "rgba(251,191,36,0.15)" : "rgba(251,191,36,0.08)",
+                color: "#f59e0b",
+                fontWeight: "700", fontSize: "0.95rem", cursor: "pointer", transition: "all 0.15s",
+              }}
+            >
+              <Briefcase size={16} />
+              Propor Vaga de Trabalho
+            </button>
+
+            {/* Job picker */}
+            {showJobPicker && (
+              <div style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "12px", overflow: "hidden" }}>
+                <p style={{ margin: 0, padding: "0.75rem 1rem 0.5rem", fontSize: "0.78rem", fontWeight: "700", color: "var(--muted)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                  Selecionar a Vaga a Propor
+                </p>
+                {employerJobs.length === 0 ? (
+                  <p style={{ margin: 0, padding: "0.75rem 1rem 1rem", fontSize: "0.85rem", color: "var(--muted)", fontStyle: "italic" }}>
+                    Não tem vagas abertas de momento. Publique uma vaga primeiro.
+                  </p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    {employerJobs.map((job) => (
+                      <button
+                        key={job.id}
+                        onClick={() => onChat(job.id)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "0.75rem",
+                          padding: "0.75rem 1rem",
+                          background: "none", border: "none", borderTop: "1px solid var(--line)",
+                          color: "var(--ink)", textAlign: "left", cursor: "pointer",
+                          transition: "background 0.15s",
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "var(--surface)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                      >
+                        <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <Briefcase size={16} style={{ color: "#f59e0b" }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontWeight: "700", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.title}</p>
+                          <p style={{ margin: 0, fontSize: "0.75rem", color: "var(--muted)" }}>€{job.pay}/h · {job.city}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* Reviews */}
           <div>
