@@ -248,6 +248,13 @@ export const api = {
     });
   },
 
+  async reportConversation(partnerId: number, jobId?: number, reason?: string): Promise<void> {
+    await request("/api/chat/report", {
+      method: "POST",
+      body: { reportedUserId: partnerId, jobId: jobId ?? null, reason: reason ?? "" } as any,
+    });
+  },
+
   async closeJob(jobId: number): Promise<{ message: string }> {
     return request<{ message: string }>("/api/jobs/close", {
       method: "POST",
@@ -296,6 +303,14 @@ export const api = {
     },
     async closeJob(id: number): Promise<{ message: string }> {
       return request<any>(`/api/admin/jobs/${id}/close`, { method: "POST" });
+    },
+    async getConversations(): Promise<any[]> {
+      return request<any[]>("/api/admin/conversations");
+    },
+    async getConversationMessages(user1Id: number, user2Id: number, jobId?: number): Promise<any[]> {
+      const p = new URLSearchParams({ user1Id: String(user1Id), user2Id: String(user2Id) });
+      if (jobId != null) p.set("jobId", String(jobId));
+      return request<any[]>(`/api/admin/conversation-messages?${p}`);
     },
   },
 };

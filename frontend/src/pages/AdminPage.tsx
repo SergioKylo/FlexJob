@@ -25,6 +25,15 @@ type AdminMessage = {
   id: number; fromName: string; toName: string; jobTitle?: string;
   content: string; messageType: string; createdAt: string;
 };
+type AdminConv = {
+  user1Id: number; user2Id: number; jobId?: number;
+  user1Name: string; user2Name: string; jobTitle?: string;
+  lastMessageAt: string; messageCount: number; reportCount: number;
+};
+type AdminConvMsg = {
+  id: number; fromUserId: number; fromName: string;
+  content: string; messageType: string; createdAt: string;
+};
 type Tab = "overview" | "users" | "jobs" | "messages";
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -116,7 +125,30 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
   const [deletingJob, setDeletingJob]   = useState<number | null>(null);
   const [closingJob, setClosingJob]     = useState<number | null>(null);
 
+  // Conversation inbox (messages tab)
+  const [convList, setConvList]           = useState<AdminConv[]>([]);
+  const [selectedConv, setSelectedConv]   = useState<AdminConv | null>(null);
+  const [convMessages, setConvMessages]   = useState<AdminConvMsg[]>([]);
+  const [loadingConvMsgs, setLoadingConvMsgs] = useState(false);
+  const [convFilter, setConvFilter]       = useState<"all" | "reported">("all");
+
   useEffect(() => { loadAll(false); }, []);
+
+  useEffect(() => {
+    if (tab === "messages") {
+      api.admin.getConversations()
+        .then(setConvList)
+        .catch(console.error);
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    if (!selectedConv) { setConvMessages([]); return; }
+    setLoadingConvMsgs(true);
+    api.admin.getConversationMessages(selectedConv.user1Id, selectedConv.user2Id, selectedConv.jobId ?? undefined)
+      .then((data) => { setConvMessages(data); setLoadingConvMsgs(false); })
+      .catch(() => setLoadingConvMsgs(false));
+  }, [selectedConv]);
 
   async function loadAll(isRefresh = true) {
     isRefresh ? setRefreshing(true) : setLoading(true);
@@ -472,48 +504,151 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
         {/* ════════════════════════════════ MESSAGES ══════════════════════ */}
         {tab === "messages" && (
           <>
-            <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 18 }}>
-              Mensagens <span style={{ color: "var(--muted)", fontWeight: 400 }}>({messages.length})</span>
-            </h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {messages.map((m) => (
-                <div key={m.id} style={{
-                  background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 12,
-                  padding: "12px 16px", display: "flex", gap: 14, alignItems: "flex-start",
-                }}>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: "50%", marginTop: 4, flexShrink: 0,
-                    background: m.messageType === "payment_escrow" || m.messageType === "payment_released"
-                      ? "#22c55e" : m.messageType === "application" ? "#8b5cf6" : "var(--brand)",
-                  }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3 }}>
-                      <span style={{ color: "var(--brand)" }}>{m.fromName}</span>
-                      <span style={{ color: "var(--muted)", margin: "0 6px" }}>→</span>
-                      <span>{m.toName}</span>
-                      {m.jobTitle && (
-                        <span style={{
-                          marginLeft: 8, fontSize: 11, padding: "1px 7px", borderRadius: 6,
-                          background: "var(--surface2)", color: "var(--muted)",
-                        }}>{m.jobTitle}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+                Conversas <span style={{ color: "var(--muted)", fontWeight: 400 }}>({convList.length})</span>
+                {convList.some(c => c.reportCount > 0) && (
+                  <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 10, background: "rgba(239,68,68,0.12)", color: "#ef4444", fontSize: 12, fontWeight: 700 }}>
+                    🚩 {convList.filter(c => c.reportCount > 0).length} reportada{convList.filter(c => c.reportCount > 0).length !== 1 ? "s" : ""}
+                  </span>
+                )}
+              </h2>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["all", "reported"] as const).map((f) => (
+                  <button key={f} onClick={() => { setConvFilter(f); setSelectedConv(null); }}
+                    style={{
+                      padding: "6px 14px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                      background: convFilter === f ? "var(--brand)" : "var(--surface2)",
+                      color: convFilter === f ? "#fff" : "var(--muted)",
+                    }}>
+                    {f === "all" ? "Todas" : "🚩 Reportadas"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Two-panel inbox layout */}
+            <div style={{ display: "flex", gap: 16, height: "calc(100vh - 220px)", minHeight: 400 }}>
+
+              {/* Left: conversation list */}
+              <div style={{
+                width: 280, flexShrink: 0, background: "var(--surface)", border: "1px solid var(--line)",
+                borderRadius: 14, overflowY: "auto", display: "flex", flexDirection: "column",
+              }}>
+                {convList
+                  .filter(c => convFilter === "all" || c.reportCount > 0)
+                  .map((conv) => {
+                    const isActive = selectedConv?.user1Id === conv.user1Id && selectedConv?.user2Id === conv.user2Id && selectedConv?.jobId === conv.jobId;
+                    return (
+                      <button key={`${conv.user1Id}-${conv.user2Id}-${conv.jobId ?? "none"}`}
+                        onClick={() => setSelectedConv(conv)}
+                        style={{
+                          display: "flex", flexDirection: "column", gap: 4, padding: "12px 14px",
+                          border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", textAlign: "left",
+                          background: isActive ? "rgba(99,102,241,0.08)" : "transparent",
+                          borderLeft: isActive ? "3px solid var(--brand)" : "3px solid transparent",
+                          transition: "background 0.12s",
+                        }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
+                          <span style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)", flex: 1, lineHeight: 1.3 }}>
+                            {conv.user1Name} ↔ {conv.user2Name}
+                          </span>
+                          {conv.reportCount > 0 && (
+                            <span style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 6, flexShrink: 0 }}>
+                              🚩 {conv.reportCount}
+                            </span>
+                          )}
+                        </div>
+                        {conv.jobTitle && (
+                          <span style={{ fontSize: 11, color: "#6366f1", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            💼 {conv.jobTitle}
+                          </span>
+                        )}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>{conv.messageCount} msg</span>
+                          <span style={{ fontSize: 10, color: "var(--muted)" }}>{fmt(conv.lastMessageAt)}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                {convList.filter(c => convFilter === "all" || c.reportCount > 0).length === 0 && (
+                  <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+                    {convFilter === "reported" ? "Nenhuma conversa reportada." : "Sem conversas ainda."}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: message thread */}
+              <div style={{
+                flex: 1, background: "var(--surface)", border: "1px solid var(--line)",
+                borderRadius: 14, display: "flex", flexDirection: "column", overflow: "hidden",
+              }}>
+                {selectedConv ? (
+                  <>
+                    {/* Thread header */}
+                    <div style={{
+                      padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex",
+                      alignItems: "center", gap: 10, flexWrap: "wrap",
+                    }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>
+                          {selectedConv.user1Name} ↔ {selectedConv.user2Name}
+                        </span>
+                        {selectedConv.jobTitle && (
+                          <span style={{ marginLeft: 8, fontSize: 11, color: "#6366f1", fontWeight: 600 }}>· 💼 {selectedConv.jobTitle}</span>
+                        )}
+                      </div>
+                      {selectedConv.reportCount > 0 && (
+                        <Badge label={`🚩 ${selectedConv.reportCount} reporte${selectedConv.reportCount !== 1 ? "s" : ""}`} color="#ef4444" />
                       )}
                     </div>
-                    <div style={{ fontSize: 13, color: "var(--muted)" }}>{m.content}</div>
+
+                    {/* Messages */}
+                    <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                      {loadingConvMsgs ? (
+                        <div style={{ textAlign: "center", color: "var(--muted)", paddingTop: 40 }}>A carregar...</div>
+                      ) : convMessages.length === 0 ? (
+                        <div style={{ textAlign: "center", color: "var(--muted)", paddingTop: 40 }}>Sem mensagens nesta conversa.</div>
+                      ) : convMessages.map((msg) => {
+                        const isUser1 = msg.fromUserId === selectedConv.user1Id;
+                        const isSpecial = msg.messageType !== "text";
+                        if (isSpecial) {
+                          const color = msg.messageType === "payment_escrow" || msg.messageType === "payment_released" ? "#22c97a" : msg.messageType === "application" ? "#8b5cf6" : "#6366f1";
+                          return (
+                            <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
+                              <div style={{ padding: "6px 14px", borderRadius: 10, background: color + "18", border: `1px solid ${color}44`, maxWidth: "80%" }}>
+                                <span style={{ fontSize: 12, color, fontWeight: 600 }}>{msg.fromName}: </span>
+                                <span style={{ fontSize: 12, color: "var(--ink)" }}>{msg.content}</span>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: isUser1 ? "flex-start" : "flex-end" }}>
+                            <span style={{ fontSize: 10, color: "var(--muted)", marginBottom: 2, paddingLeft: 4, paddingRight: 4 }}>{msg.fromName}</span>
+                            <div style={{
+                              maxWidth: "72%", padding: "8px 12px", borderRadius: isUser1 ? "4px 16px 16px 16px" : "16px 4px 16px 16px",
+                              background: isUser1 ? "var(--surface2)" : "linear-gradient(135deg, #6366f1, #4f46e5)",
+                              color: isUser1 ? "var(--ink)" : "#fff",
+                              border: isUser1 ? "1px solid var(--line)" : "none",
+                            }}>
+                              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.4, wordBreak: "break-word" }}>{msg.content}</p>
+                              <span style={{ display: "block", fontSize: 10, opacity: 0.55, marginTop: 3, textAlign: "right" }}>
+                                {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", flexDirection: "column", gap: 10 }}>
+                    <MessageSquare size={40} style={{ opacity: 0.2 }} />
+                    <p style={{ margin: 0, fontSize: 14 }}>Selecione uma conversa para ver as mensagens</p>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
-                    <span style={{ fontSize: 11, color: "var(--muted)" }}>{fmt(m.createdAt)}</span>
-                    {m.messageType !== "text" && (
-                      <Badge
-                        label={m.messageType === "payment_escrow" ? "Pagamento" : m.messageType === "payment_released" ? "Liberado" : m.messageType}
-                        color="#22c55e"
-                      />
-                    )}
-                  </div>
-                </div>
-              ))}
-              {messages.length === 0 && (
-                <div style={{ padding: 48, textAlign: "center", color: "var(--muted)" }}>Sem mensagens ainda.</div>
-              )}
+                )}
+              </div>
             </div>
           </>
         )}

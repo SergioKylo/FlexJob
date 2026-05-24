@@ -132,6 +132,20 @@ public static class Database
                     );";
                 ExecuteNonQueryInternal(createMessages, null, connection);
 
+                // Reports table
+                var createReports = @"
+                    CREATE TABLE IF NOT EXISTS reports (
+                        id INT AUTO_INCREMENT PRIMARY KEY,
+                        reporter_id INT NOT NULL,
+                        reported_user_id INT NOT NULL,
+                        job_id INT,
+                        reason TEXT,
+                        created_at VARCHAR(100) NOT NULL,
+                        FOREIGN KEY (reporter_id) REFERENCES users(id),
+                        FOREIGN KEY (reported_user_id) REFERENCES users(id)
+                    );";
+                ExecuteNonQueryInternal(createReports, null, connection);
+
                 // Reviews table
                 var createReviews = @"
                     CREATE TABLE IF NOT EXISTS reviews (

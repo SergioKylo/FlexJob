@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star, CreditCard, X } from "lucide-react";
+import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star, CreditCard, X, Flag } from "lucide-react";
 import { api } from "../utils/api";
 import type { ChatMessage, InboxConversation, User } from "../types";
 
@@ -55,6 +55,10 @@ export function MessagesPage({
   const [workerReviewComment, setWorkerReviewComment] = useState("");
   const [workerReviewLoading, setWorkerReviewLoading] = useState(false);
   const [workerReviewDone, setWorkerReviewDone] = useState(false);
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -129,6 +133,9 @@ export function MessagesPage({
     setShowWorkerReview(false);
     setWorkerReviewDone(false);
     setWorkerReviewComment("");
+    setShowReportForm(false);
+    setReportReason("");
+    setReportSent(false);
     if (selectedConv && selectedConv.jobId > 0) {
       api.getJobDetail(selectedConv.jobId)
         .then(setJobDetail)
@@ -215,6 +222,22 @@ export function MessagesPage({
       alert(err.message || "Erro ao dar gorjeta.");
     } finally {
       setTipLoading(false);
+    }
+  }
+
+  async function handleReport() {
+    if (!selectedConv) return;
+    setReportLoading(true);
+    try {
+      const jobId = selectedConv.jobId > 0 ? selectedConv.jobId : undefined;
+      await api.reportConversation(selectedConv.partnerId, jobId, reportReason);
+      setReportSent(true);
+      setShowReportForm(false);
+      setReportReason("");
+    } catch (err: any) {
+      alert(err.message || "Erro ao reportar.");
+    } finally {
+      setReportLoading(false);
     }
   }
 
@@ -382,6 +405,26 @@ export function MessagesPage({
                     {selectedConv.partnerRole}
                   </span>
                 )}
+                {/* Report button */}
+                {reportSent ? (
+                  <span style={{ fontSize: "0.7rem", color: "#ef4444", fontWeight: 700, flexShrink: 0 }}>🚩 Reportado</span>
+                ) : (
+                  <button
+                    onClick={() => setShowReportForm((v) => !v)}
+                    title="Reportar conversa"
+                    style={{
+                      background: showReportForm ? "rgba(239,68,68,0.12)" : "none",
+                      border: "1px solid " + (showReportForm ? "rgba(239,68,68,0.4)" : "transparent"),
+                      borderRadius: 8, padding: "4px 8px", cursor: "pointer",
+                      color: showReportForm ? "#ef4444" : "var(--muted)",
+                      display: "flex", alignItems: "center", gap: "0.3rem",
+                      fontSize: "0.72rem", fontWeight: 600, flexShrink: 0, transition: "all 0.15s",
+                    }}
+                  >
+                    <Flag size={12} />
+                    Reportar
+                  </button>
+                )}
                 {canPay && (
                   <button
                     onClick={() => setShowPayForm((v) => !v)}
@@ -398,6 +441,36 @@ export function MessagesPage({
                   </button>
                 )}
               </div>
+
+              {/* ── Report form panel ── */}
+              {showReportForm && !reportSent && (
+                <div style={{ padding: "0.9rem 1.25rem", borderBottom: "1px solid var(--line)", background: "rgba(239,68,68,0.05)", borderLeft: "3px solid #ef4444" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
+                    <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 700, color: "#ef4444" }}>🚩 Reportar esta conversa ao Admin</p>
+                    <button onClick={() => setShowReportForm(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "0.2rem" }}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <textarea
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    placeholder="Motivo do reporte (opcional)..."
+                    rows={2}
+                    className="msg-input"
+                    style={{ width: "100%", boxSizing: "border-box", resize: "none", marginBottom: "0.5rem", fontSize: "0.82rem" }}
+                  />
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button onClick={() => setShowReportForm(false)}
+                      style={{ flex: 1, padding: "0.45rem", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}>
+                      Cancelar
+                    </button>
+                    <button onClick={handleReport} disabled={reportLoading}
+                      style={{ flex: 2, padding: "0.45rem", borderRadius: 8, border: "none", background: "#ef4444", color: "#fff", cursor: "pointer", fontSize: "0.8rem", fontWeight: 700, opacity: reportLoading ? 0.6 : 1 }}>
+                      {reportLoading ? "A enviar..." : "Confirmar Reporte 🚩"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* ── Payment form panel ── */}
               {showPayForm && canPay && (

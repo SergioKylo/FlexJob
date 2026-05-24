@@ -1386,6 +1386,115 @@ webApp.MapPost("/api/admin/jobs/{id}/close", (HttpContext context, int id) =>
     return Results.Ok(new { message = "Vaga fechada pelo admin." });
 });
 
+// --- Report Chat ---
+webApp.MapPost("/api/chat/report", (HttpContext context, ReportChatRequest request) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userIdStr = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    if (userIdStr == null) return Results.Unauthorized();
+    int userId = int.Parse(userIdStr);
+
+    var pars = new Dictionary<string, object>
+    {
+        { "@reporterId",    userId },
+        { "@reportedId",    request.ReportedUserId },
+        { "@reason",        request.Reason ?? "" },
+        { "@now",           DateTime.UtcNow.ToString("o") },
+    };
+    string sql;
+    if (request.JobId.HasValue)
+    {
+        pars["@jobId"] = request.JobId.Value;
+        sql = @"INSERT INTO reports (reporter_id, reported_user_id, job_id, reason, created_at)
+                VALUES (@reporterId, @reportedId, @jobId, @reason, @now)";
+    }
+    else
+    {
+        sql = @"INSERT INTO reports (reporter_id, reported_user_id, reason, created_at)
+                VALUES (@reporterId, @reportedId, @reason, @now)";
+    }
+    Database.ExecuteNonQuery(sql, pars);
+    return Results.Ok(new { message = "Conversa reportada com sucesso." });
+});
+
+// --- Admin: conversation list (grouped) ---
+webApp.MapGet("/api/admin/conversations", (HttpContext context) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var rows = Database.ExecuteQuery(@"
+        SELECT
+            LEAST(m.from_user_id, m.to_user_id)    AS user1_id,
+            GREATEST(m.from_user_id, m.to_user_id) AS user2_id,
+            m.job_id,
+            u1.name  AS user1_name,
+            u2.name  AS user2_name,
+            j.title  AS job_title,
+            MAX(m.created_at)     AS last_message_at,
+            COUNT(DISTINCT m.id)  AS message_count,
+            COUNT(DISTINCT r.id)  AS report_count
+        FROM messages m
+        JOIN  users u1 ON u1.id = LEAST(m.from_user_id, m.to_user_id)
+        JOIN  users u2 ON u2.id = GREATEST(m.from_user_id, m.to_user_id)
+        LEFT JOIN jobs j ON j.id = m.job_id
+        LEFT JOIN reports r ON
+            (r.reporter_id    = LEAST(m.from_user_id, m.to_user_id) OR
+             r.reporter_id    = GREATEST(m.from_user_id, m.to_user_id))
+            AND
+            (r.reported_user_id = LEAST(m.from_user_id, m.to_user_id) OR
+             r.reported_user_id = GREATEST(m.from_user_id, m.to_user_id))
+        GROUP BY LEAST(m.from_user_id, m.to_user_id),
+                 GREATEST(m.from_user_id, m.to_user_id),
+                 m.job_id
+        ORDER BY MAX(m.created_at) DESC");
+
+    return Results.Ok(rows.Select(r => new
+    {
+        user1Id       = Convert.ToInt32(r["user1_id"]),
+        user2Id       = Convert.ToInt32(r["user2_id"]),
+        jobId         = r["job_id"] != null && r["job_id"] != DBNull.Value ? (int?)Convert.ToInt32(r["job_id"]) : null,
+        user1Name     = r["user1_name"]?.ToString(),
+        user2Name     = r["user2_name"]?.ToString(),
+        jobTitle      = r["job_title"]?.ToString(),
+        lastMessageAt = r["last_message_at"]?.ToString(),
+        messageCount  = Convert.ToInt32(r["message_count"]),
+        reportCount   = Convert.ToInt32(r["report_count"]),
+    }));
+});
+
+// --- Admin: messages inside a specific conversation ---
+webApp.MapGet("/api/admin/conversation-messages", (HttpContext context) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+    if (!int.TryParse(context.Request.Query["user1Id"], out var u1)) return Results.BadRequest();
+    if (!int.TryParse(context.Request.Query["user2Id"], out var u2)) return Results.BadRequest();
+    int? jobId = int.TryParse(context.Request.Query["jobId"], out var jId) ? jId : (int?)null;
+
+    var pars = new Dictionary<string, object> { { "@u1", u1 }, { "@u2", u2 } };
+    string jobFilter = jobId.HasValue ? "AND m.job_id = @jobId" : "AND m.job_id IS NULL";
+    if (jobId.HasValue) pars["@jobId"] = jobId.Value;
+
+    var rows = Database.ExecuteQuery($@"
+        SELECT m.id, m.from_user_id, m.content, m.message_type, m.created_at,
+               uf.name AS from_name
+        FROM messages m
+        JOIN users uf ON uf.id = m.from_user_id
+        WHERE ((m.from_user_id = @u1 AND m.to_user_id = @u2)
+            OR (m.from_user_id = @u2 AND m.to_user_id = @u1))
+        {jobFilter}
+        ORDER BY m.created_at ASC", pars);
+
+    return Results.Ok(rows.Select(r => new
+    {
+        id          = Convert.ToInt32(r["id"]),
+        fromUserId  = Convert.ToInt32(r["from_user_id"]),
+        fromName    = r["from_name"]?.ToString(),
+        content     = r["content"]?.ToString(),
+        messageType = r["message_type"]?.ToString(),
+        createdAt   = r["created_at"]?.ToString(),
+    }));
+});
+
 // --- Wallet Endpoint ---
 
 webApp.MapGet("/api/wallet", (HttpContext context) =>
@@ -1451,6 +1560,7 @@ public record TipRequest(int JobId, double Amount);
 public record CloseJobRequest(int JobId);
 public record UpdateJobRequest(int JobId, string Title, string Description, double Pay, string Duration, string? WorkDate = null, string? Address = null);
 public record WorkerReviewRequest(int JobId, double Rating, string? Comment = null);
+public record ReportChatRequest(int ReportedUserId, int? JobId, string? Reason);
 
 // --- Admin Helper ---
 public static class AdminHelper
