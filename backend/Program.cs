@@ -165,6 +165,33 @@ webApp.MapPost("/api/auth/logout", async (HttpContext context) =>
     return Results.Ok(new { message = "Sessão terminada." });
 });
 
+// Dev-only: force-reset admin password to 123456
+webApp.MapGet("/api/setup/reset-admin", () =>
+{
+    try
+    {
+        string hash = PasswordHasher.Hash("123456");
+        string now  = DateTime.UtcNow.ToString("o");
+        var existing = Database.ExecuteQuery("SELECT id FROM users WHERE email = 'admin@flexjob.com'");
+        if (existing.Count == 0)
+        {
+            Database.ExecuteNonQuery(
+                @"INSERT INTO users (name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
+                  VALUES ('Admin FlexJob', 'admin@flexjob.com', @hash, 'admin', 'https://i.pravatar.cc/150?img=8', 'Administrador da plataforma FlexJob.', 5.0, 0, 38.7169, -9.1399, @now)",
+                new() { { "@hash", hash }, { "@now", now } });
+            return Results.Ok(new { message = "Admin criado com password 123456." });
+        }
+        Database.ExecuteNonQuery(
+            "UPDATE users SET password_hash = @hash, role = 'admin' WHERE email = 'admin@flexjob.com'",
+            new() { { "@hash", hash } });
+        return Results.Ok(new { message = "Password do admin redefinida para 123456." });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+});
+
 webApp.MapGet("/api/auth/me", async (HttpContext context) =>
 {
     if (context.User.Identity?.IsAuthenticated != true)
