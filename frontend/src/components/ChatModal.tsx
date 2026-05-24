@@ -179,7 +179,7 @@ export function ChatModal({
 
                 // System messages (payment, application, warnings, etc.)
                 if (msg.messageType !== "text") {
-                  const color = msg.messageType === "payment_escrow" || msg.messageType === "payment_released" ? "var(--green)"
+                  const color = msg.messageType === "payment_escrow" || msg.messageType === "payment_released" || msg.messageType === "proposal_accepted" ? "var(--green)"
                     : msg.messageType === "proposal_rejected" ? "#ef4444"
                     : msg.messageType === "admin_warning" ? "#f59e0b"
                     : "var(--muted)";

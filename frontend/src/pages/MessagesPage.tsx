@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star, CreditCard, X, Flag } from "lucide-react";
+import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star, CreditCard, X, Flag, EyeOff, Eye } from "lucide-react";
 import { api } from "../utils/api";
 import type { ChatMessage, InboxConversation, User } from "../types";
+import { JobProposalModal } from "../components/JobProposalModal";
 
 type JobDetail = {
   id: number;
@@ -59,6 +60,11 @@ export function MessagesPage({
   const [reportReason, setReportReason] = useState("");
   const [reportLoading, setReportLoading] = useState(false);
   const [reportSent, setReportSent] = useState(false);
+  const [showProposalModal, setShowProposalModal] = useState(false);
+  const [hiddenConvs, setHiddenConvs] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("flexjob_hidden_convs") || "[]"); } catch { return []; }
+  });
+  const [showCleared, setShowCleared] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -241,6 +247,47 @@ export function MessagesPage({
     }
   }
 
+  function hideConv(partnerId: number, jobId: number) {
+    const key = `${partnerId}-${jobId}`;
+    if (hiddenConvs.includes(key)) return;
+    const updated = [...hiddenConvs, key];
+    setHiddenConvs(updated);
+    localStorage.setItem("flexjob_hidden_convs", JSON.stringify(updated));
+    if (selectedConv?.partnerId === partnerId && selectedConv?.jobId === jobId) {
+      setSelectedConv(null);
+    }
+  }
+
+  function clearAllConvs() {
+    const keys = conversations.map((c) => `${c.partnerId}-${c.jobId}`);
+    const merged = Array.from(new Set([...hiddenConvs, ...keys]));
+    setHiddenConvs(merged);
+    localStorage.setItem("flexjob_hidden_convs", JSON.stringify(merged));
+    setSelectedConv(null);
+  }
+
+  function restoreAllConvs() {
+    setHiddenConvs([]);
+    localStorage.removeItem("flexjob_hidden_convs");
+    setShowCleared(false);
+  }
+
+  async function handleRespondProposal(jobId: number, accept: boolean) {
+    try {
+      await api.respondToProposal(jobId, accept);
+      const currentJobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
+      if (accept) {
+        setSelectedConv((prev) => prev ? { ...prev, jobId } : prev);
+        const detail = await api.getJobDetail(jobId);
+        setJobDetail(detail);
+      }
+      const data = await api.getMessages(selectedConv!.partnerId, accept ? jobId : currentJobId);
+      setMessages(data);
+    } catch (err: any) {
+      alert(err?.message || "Erro ao responder à proposta.");
+    }
+  }
+
   async function handleRelease() {
     if (!jobDetail) return;
     setPaymentLoading(true);
@@ -281,6 +328,13 @@ export function MessagesPage({
 
   const isEmployer = user.role === "employer";
 
+  const visibleConvs = conversations.filter((c) =>
+    showCleared || !hiddenConvs.includes(`${c.partnerId}-${c.jobId}`)
+  );
+  const hiddenCount = conversations.filter((c) =>
+    hiddenConvs.includes(`${c.partnerId}-${c.jobId}`)
+  ).length;
+
   // Determine payment bar state
   const canPay = isEmployer && jobDetail && jobDetail.workerId && jobDetail.paymentStatus === "none" && jobDetail.status === "accepted";
   const awaitingConfirmation = isEmployer && jobDetail && jobDetail.paymentStatus === "escrowed";
@@ -295,14 +349,51 @@ export function MessagesPage({
       {showList && (
         <div className="msg-sidebar" style={{ width: isMobile ? "100%" : undefined }}>
           <div className="msg-sidebar-head">
-            <h2>Mensagens</h2>
-            <p>{conversations.length} conversa{conversations.length !== 1 ? "s" : ""}</p>
+            <div>
+              <h2>Mensagens</h2>
+              <p>{visibleConvs.length} conversa{visibleConvs.length !== 1 ? "s" : ""}</p>
+            </div>
+            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+              {hiddenCount > 0 && (
+                <button
+                  onClick={() => setShowCleared((v) => !v)}
+                  title={showCleared ? "Ocultar conversas limpas" : `Mostrar ${hiddenCount} oculta${hiddenCount !== 1 ? "s" : ""}`}
+                  style={{
+                    background: showCleared ? "rgba(99,102,241,0.15)" : "var(--surface2)",
+                    border: "1px solid " + (showCleared ? "rgba(99,102,241,0.4)" : "var(--line)"),
+                    borderRadius: "8px", padding: "5px 8px", cursor: "pointer",
+                    color: showCleared ? "#6366f1" : "var(--muted)",
+                    display: "flex", alignItems: "center", gap: "4px",
+                    fontSize: "0.72rem", fontWeight: 600, transition: "all 0.15s",
+                  }}
+                >
+                  {showCleared ? <EyeOff size={12} /> : <Eye size={12} />}
+                  {hiddenCount}
+                </button>
+              )}
+              {conversations.length > 0 && (
+                <button
+                  onClick={clearAllConvs}
+                  title="Limpar todas as conversas"
+                  style={{
+                    background: "var(--surface2)", border: "1px solid var(--line)",
+                    borderRadius: "8px", padding: "5px 8px", cursor: "pointer",
+                    color: "var(--muted)", display: "flex", alignItems: "center",
+                    fontSize: "0.72rem", fontWeight: 600, transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = "#ef4444"; e.currentTarget.style.borderColor = "rgba(239,68,68,0.4)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--line)"; }}
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
           </div>
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {loadingInbox ? (
               <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>A carregar...</div>
-            ) : conversations.length === 0 ? (
+            ) : visibleConvs.length === 0 && conversations.length === 0 ? (
               <div style={{ padding: "3rem 1.5rem", textAlign: "center" }}>
                 <MessageSquare size={40} style={{ color: "var(--line)", marginBottom: "1rem", display: "block", margin: "0 auto 1rem" }} />
                 <p style={{ color: "var(--muted)", fontSize: "0.87rem", lineHeight: "1.55", margin: 0 }}>
@@ -310,54 +401,118 @@ export function MessagesPage({
                   Candidate-se a vagas ou contacte trabalhadores para começar.
                 </p>
               </div>
+            ) : visibleConvs.length === 0 ? (
+              <div style={{ padding: "2rem 1.5rem", textAlign: "center" }}>
+                <EyeOff size={32} style={{ color: "var(--line)", marginBottom: "0.75rem", display: "block", margin: "0 auto 0.75rem" }} />
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 0.75rem" }}>
+                  Todas as conversas foram limpas.
+                </p>
+                <button
+                  onClick={restoreAllConvs}
+                  style={{ padding: "6px 14px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.8rem", cursor: "pointer", fontWeight: 600 }}
+                >
+                  Restaurar todas
+                </button>
+              </div>
             ) : (
-              conversations.map((conv) => {
-                const isActive =
-                  selectedConv?.partnerId === conv.partnerId &&
-                  selectedConv?.jobId === conv.jobId;
-                return (
-                  <button
-                    key={`${conv.partnerId}-${conv.jobId}`}
-                    onClick={() => setSelectedConv(conv)}
-                    className={`msg-conv-btn ${isActive ? "active" : ""}`}
-                  >
-                    <div style={{ position: "relative", flexShrink: 0 }}>
-                      <img
-                        src={avatarUrl(conv.partnerId, conv.partnerAvatar)}
-                        alt={conv.partnerName}
-                        style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover", border: "2px solid var(--line)" }}
-                      />
-                      <span style={{
-                        position: "absolute", bottom: "1px", right: "1px",
-                        width: "9px", height: "9px", background: "#10b981",
-                        borderRadius: "50%", border: "2px solid var(--surface)",
-                      }} />
-                    </div>
-
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.1rem" }}>
-                        <span style={{ fontWeight: "600", color: "var(--ink)", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {conv.partnerName}
-                        </span>
-                        <span style={{ fontSize: "0.7rem", color: "var(--muted)", flexShrink: 0, marginLeft: "0.5rem" }}>
-                          {formatTime(conv.lastMessageTime)}
-                        </span>
-                      </div>
-                      {conv.jobTitle && (
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginBottom: "0.15rem" }}>
-                          <Briefcase size={9} style={{ color: "#6366f1", flexShrink: 0 }} />
-                          <span style={{ fontSize: "0.7rem", color: "#6366f1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {conv.jobTitle}
-                          </span>
+              <>
+                {visibleConvs.map((conv) => {
+                  const isActive =
+                    selectedConv?.partnerId === conv.partnerId &&
+                    selectedConv?.jobId === conv.jobId;
+                  const isHidden = hiddenConvs.includes(`${conv.partnerId}-${conv.jobId}`);
+                  return (
+                    <div
+                      key={`${conv.partnerId}-${conv.jobId}`}
+                      style={{ position: "relative", display: "flex", alignItems: "stretch" }}
+                      className="msg-conv-wrap"
+                    >
+                      <button
+                        onClick={() => setSelectedConv(conv)}
+                        className={`msg-conv-btn ${isActive ? "active" : ""}`}
+                        style={{ flex: 1 }}
+                      >
+                        <div style={{ position: "relative", flexShrink: 0 }}>
+                          <img
+                            src={avatarUrl(conv.partnerId, conv.partnerAvatar)}
+                            alt={conv.partnerName}
+                            style={{ width: "42px", height: "42px", borderRadius: "50%", objectFit: "cover", border: "2px solid var(--line)" }}
+                          />
+                          <span style={{
+                            position: "absolute", bottom: "1px", right: "1px",
+                            width: "9px", height: "9px", background: isHidden ? "var(--muted)" : "#10b981",
+                            borderRadius: "50%", border: "2px solid var(--surface)",
+                          }} />
                         </div>
-                      )}
-                      <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {conv.lastMessage || "Iniciar conversa..."}
-                      </p>
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.1rem" }}>
+                            <span style={{ fontWeight: "600", color: isHidden ? "var(--muted)" : "var(--ink)", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isHidden ? "italic" : undefined }}>
+                              {conv.partnerName}
+                            </span>
+                            <span style={{ fontSize: "0.7rem", color: "var(--muted)", flexShrink: 0, marginLeft: "0.5rem" }}>
+                              {formatTime(conv.lastMessageTime)}
+                            </span>
+                          </div>
+                          {conv.jobTitle && (
+                            <div style={{ display: "flex", alignItems: "center", gap: "0.25rem", marginBottom: "0.15rem" }}>
+                              <Briefcase size={9} style={{ color: "#6366f1", flexShrink: 0 }} />
+                              <span style={{ fontSize: "0.7rem", color: "#6366f1", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {conv.jobTitle}
+                              </span>
+                            </div>
+                          )}
+                          <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {conv.lastMessage || "Iniciar conversa..."}
+                          </p>
+                        </div>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); hideConv(conv.partnerId, conv.jobId); }}
+                        title="Ocultar conversa"
+                        className="msg-conv-hide-btn"
+                        style={{
+                          background: "none", border: "none", cursor: "pointer",
+                          color: "var(--muted)", padding: "0 8px", flexShrink: 0,
+                          opacity: 0, transition: "opacity 0.15s",
+                          display: "flex", alignItems: "center",
+                        }}
+                      >
+                        <X size={13} />
+                      </button>
                     </div>
+                  );
+                })}
+                {!showCleared && hiddenCount > 0 && (
+                  <button
+                    onClick={() => setShowCleared(true)}
+                    style={{
+                      width: "100%", padding: "0.65rem", border: "none", borderTop: "1px solid var(--line)",
+                      background: "none", color: "var(--muted)", fontSize: "0.78rem",
+                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px",
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--surface2)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                  >
+                    <Eye size={12} />
+                    Ver {hiddenCount} conversa{hiddenCount !== 1 ? "s" : ""} oculta{hiddenCount !== 1 ? "s" : ""}
                   </button>
-                );
-              })
+                )}
+                {showCleared && hiddenCount > 0 && (
+                  <button
+                    onClick={restoreAllConvs}
+                    style={{
+                      width: "100%", padding: "0.65rem", border: "none", borderTop: "1px solid var(--line)",
+                      background: "none", color: "#6366f1", fontSize: "0.78rem",
+                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", fontWeight: 600,
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = "var(--surface2)"}
+                    onMouseLeave={(e) => e.currentTarget.style.background = "none"}
+                  >
+                    Restaurar todas as ocultas
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -416,6 +571,25 @@ export function MessagesPage({
                   >
                     <Flag size={12} />
                     Reportar
+                  </button>
+                )}
+                {isEmployer && (
+                  <button
+                    onClick={() => setShowProposalModal(true)}
+                    title="Propor trabalho"
+                    style={{
+                      display: "flex", alignItems: "center", gap: "0.35rem",
+                      padding: "0.4rem 0.8rem", borderRadius: "10px",
+                      border: "1px solid rgba(251,191,36,0.4)",
+                      background: "rgba(251,191,36,0.1)",
+                      color: "#f59e0b", fontSize: "0.78rem", fontWeight: "700", cursor: "pointer",
+                      flexShrink: 0, transition: "all 0.15s",
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(251,191,36,0.2)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(251,191,36,0.1)"; }}
+                  >
+                    <Briefcase size={14} />
+                    Propor
                   </button>
                 )}
                 {canPay && (
@@ -547,6 +721,7 @@ export function MessagesPage({
                       msg={msg}
                       userId={user.id ?? 0}
                       onAcceptWorker={isEmployer && jobDetail?.status === "open" ? handleAcceptWorker : undefined}
+                      onRespondProposal={!isEmployer ? handleRespondProposal : undefined}
                     />
                   ))
                 )}
@@ -756,11 +931,30 @@ export function MessagesPage({
           )}
         </div>
       )}
+
+      {/* Job Proposal Modal — employer sends proposal from any chat */}
+      {showProposalModal && selectedConv && (
+        <JobProposalModal
+          workerId={selectedConv.partnerId}
+          workerName={selectedConv.partnerName}
+          currentUser={user}
+          onClose={() => setShowProposalModal(false)}
+          onSent={(jobId) => {
+            setShowProposalModal(false);
+            setSelectedConv((prev) => prev ? { ...prev, jobId } : prev);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function MessageBubble({ msg, userId, onAcceptWorker }: { msg: ChatMessage; userId: number; onAcceptWorker?: (workerId: number, accept: boolean) => void }) {
+function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal }: {
+  msg: ChatMessage;
+  userId: number;
+  onAcceptWorker?: (workerId: number, accept: boolean) => void;
+  onRespondProposal?: (jobId: number, accept: boolean) => void;
+}) {
   const isMe = msg.fromUserId === userId;
   const type = msg.messageType ?? "text";
 
@@ -789,6 +983,91 @@ function MessageBubble({ msg, userId, onAcceptWorker }: { msg: ChatMessage; user
         }}>
           <CheckCircle size={16} style={{ color: "#6366f1", flexShrink: 0 }} />
           <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "job_proposal") {
+    let data: { jobId?: number; title?: string; description?: string; pay?: number; duration?: string; workDate?: string; address?: string } = {};
+    try { data = JSON.parse(msg.content); } catch {}
+    const jobId = data.jobId ?? 0;
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.6rem 0" }}>
+        <div style={{ width: "100%", maxWidth: "380px", background: "var(--surface2)", border: "2px solid rgba(251,191,36,0.35)", borderRadius: "16px", overflow: "hidden" }}>
+          <div style={{ padding: "10px 14px 8px", background: "rgba(251,191,36,0.1)", borderBottom: "1px solid rgba(251,191,36,0.2)", display: "flex", alignItems: "center", gap: "8px" }}>
+            <Briefcase size={15} style={{ color: "#f59e0b", flexShrink: 0 }} />
+            <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "var(--ink)" }}>Proposta de Trabalho</span>
+            <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: "var(--muted)" }}>
+              {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </div>
+          <div style={{ padding: "10px 14px" }}>
+            {data.title && <p style={{ margin: "0 0 4px", fontWeight: 700, fontSize: "1rem", color: "var(--ink)" }}>{data.title}</p>}
+            {data.description && <p style={{ margin: "0 0 8px", fontSize: "0.82rem", color: "var(--muted)", lineHeight: 1.45 }}>{data.description}</p>}
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {!!data.pay && data.pay > 0 && (
+                <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#22c97a", background: "rgba(34,201,122,0.1)", border: "1px solid rgba(34,201,122,0.2)", borderRadius: "6px", padding: "2px 7px" }}>€{data.pay}/h</span>
+              )}
+              {data.duration && <span style={{ fontSize: "0.78rem", color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "6px", padding: "2px 7px" }}>⏱ {data.duration}</span>}
+              {data.workDate && <span style={{ fontSize: "0.78rem", color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "6px", padding: "2px 7px" }}>📅 {data.workDate}</span>}
+              {data.address && <span style={{ fontSize: "0.78rem", color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "6px", padding: "2px 7px" }}>📍 {data.address}</span>}
+            </div>
+          </div>
+          {onRespondProposal && jobId > 0 ? (
+            <div style={{ padding: "8px 14px 12px", display: "flex", gap: "8px" }}>
+              <button onClick={() => onRespondProposal(jobId, true)}
+                style={{ flex: 1, padding: "8px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #22c97a, #16a361)", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>
+                ✓ Aceitar proposta
+              </button>
+              <button onClick={() => onRespondProposal(jobId, false)}
+                style={{ flex: 1, padding: "8px", borderRadius: "10px", border: "1px solid rgba(240,96,96,0.4)", background: "rgba(240,96,96,0.08)", color: "#f06060", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>
+                ✗ Rejeitar
+              </button>
+            </div>
+          ) : (
+            <div style={{ padding: "6px 14px 10px" }}>
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", fontStyle: "italic" }}>
+                {isMe ? "Aguarda a resposta do trabalhador..." : "Proposta recebida"}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "proposal_rejected") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.4rem 0" }}>
+        <div style={{ padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%", background: "rgba(240,96,96,0.1)", border: "1px solid rgba(240,96,96,0.25)", display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <AlertCircle size={16} style={{ color: "#f06060", flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "proposal_accepted") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.4rem 0" }}>
+        <div style={{ padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%", background: "rgba(34,201,122,0.12)", border: "1px solid rgba(34,201,122,0.3)", display: "flex", alignItems: "center", gap: "0.6rem" }}>
+          <CheckCircle size={16} style={{ color: "#22c97a", flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "admin_warning") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.5rem 0" }}>
+        <div style={{ padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "88%", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.35)", display: "flex", alignItems: "flex-start", gap: "0.6rem" }}>
+          <AlertCircle size={16} style={{ color: "#f59e0b", flexShrink: 0, marginTop: "0.1rem" }} />
+          <div>
+            <p style={{ margin: "0 0 2px", fontSize: "0.72rem", fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.5px" }}>Aviso do Admin</p>
+            <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", lineHeight: 1.4 }}>{msg.content}</p>
+          </div>
         </div>
       </div>
     );

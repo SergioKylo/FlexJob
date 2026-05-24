@@ -1294,25 +1294,17 @@ webApp.MapPost("/api/jobs/respond-proposal", (HttpContext context, RespondPropos
         return Results.Ok(new { message = "Proposta recusada." });
     }
 
-    // Accept: check employer balance and escrow
-    var walletRows = Database.ExecuteQuery("SELECT wallet_balance FROM users WHERE id = @id", new() { { "@id", employerId } });
-    if (walletRows.Count == 0) return Results.BadRequest(new { message = "Empregador não encontrado." });
-    double balance = Convert.ToDouble(walletRows[0]["wallet_balance"]);
-    if (balance < pay)
-        return Results.BadRequest(new { message = $"O empregador não tem saldo suficiente (tem €{balance:F2}, necessário €{pay:F2})." });
-
-    Database.ExecuteNonQuery("UPDATE users SET wallet_balance = wallet_balance - @amt WHERE id = @emp",
-        new() { { "@amt", pay }, { "@emp", employerId } });
+    // Accept: mark job as accepted — employer will pay separately
     Database.ExecuteNonQuery(
-        "UPDATE jobs SET status = 'accepted', payment_status = 'escrowed', payment_amount = @pay WHERE id = @id",
-        new() { { "@pay", pay }, { "@id", request.JobId } });
+        "UPDATE jobs SET status = 'accepted', payment_status = 'none' WHERE id = @id",
+        new() { { "@id", request.JobId } });
     Database.ExecuteNonQuery(
         @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
-          VALUES (@from, @to, @jid, @content, 'payment_escrow', @now)",
+          VALUES (@from, @to, @jid, @content, 'proposal_accepted', @now)",
         new() { { "@from", userId }, { "@to", employerId }, { "@jid", request.JobId },
-                { "@content", $"Proposta aceite! €{pay:F2} em escrow — aguarda confirmação do empregador." }, { "@now", now } });
+                { "@content", $"✅ Proposta aceite! Podes efetuar o pagamento quando estiveres pronto." }, { "@now", now } });
 
-    return Results.Ok(new { message = "Proposta aceite! Pagamento em escrow." });
+    return Results.Ok(new { message = "Proposta aceite!" });
 });
 
 // --- Worker Review (worker rates employer after job done) ---
