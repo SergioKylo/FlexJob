@@ -1530,8 +1530,6 @@ webApp.MapGet("/api/admin/conversation-messages", (HttpContext context) =>
 });
 
 // --- Admin: send a warning message to a specific user ---
-record AdminSendMsgRequest(int ToUserId, string Content);
-
 webApp.MapPost("/api/admin/send-message", (HttpContext context, AdminSendMsgRequest request) =>
 {
     if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
@@ -1623,6 +1621,7 @@ public record CloseJobRequest(int JobId);
 public record UpdateJobRequest(int JobId, string Title, string Description, double Pay, string Duration, string? WorkDate = null, string? Address = null);
 public record WorkerReviewRequest(int JobId, double Rating, string? Comment = null);
 public record ReportChatRequest(int ReportedUserId, int? JobId, string? Reason);
+public record AdminSendMsgRequest(int ToUserId, string Content);
 
 // --- Admin Helper ---
 public static class AdminHelper
