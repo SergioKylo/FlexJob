@@ -135,7 +135,7 @@ export const api = {
       id: w.workerId,
       title: w.name,
       requester: "Trabalhador Disponível",
-      type: "casa", // fallback category
+      type: (w.category && w.category !== "outros" ? w.category as Category : "casa"),
       city: "Disponível na área",
       pay: w.hourlyRate,
       time: w.startTime && w.endTime ? `${w.startTime} - ${w.endTime}` : "Sempre disponível",
@@ -175,6 +175,7 @@ export const api = {
     endTime: string;
     hourlyRate: number;
     isActive: boolean;
+    category?: string;
   }): Promise<{ message: string }> {
     return request<{ message: string }>("/api/workers/availability", {
       method: "POST",

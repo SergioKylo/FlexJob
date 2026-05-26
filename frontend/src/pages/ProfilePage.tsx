@@ -66,6 +66,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
   // Region
   const [editRegion, setEditRegion] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState(region);
+  const [selectedCategory, setSelectedCategory] = useState<string>("casa");
   const [savingRegion, setSavingRegion] = useState(false);
   const [regionSaved, setRegionSaved] = useState(false);
 
@@ -104,7 +105,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
     const r = REGIONS.find((x) => x.name === selectedRegion) ?? REGIONS[0];
     setSavingRegion(true);
     try {
-      await api.updateAvailability({ lat: r.lat, lng: r.lng, radius: 10, startTime: "09:00", endTime: "18:00", hourlyRate: 10, isActive: true });
+      await api.updateAvailability({ lat: r.lat, lng: r.lng, radius: 10, startTime: "09:00", endTime: "18:00", hourlyRate: 10, isActive: true, category: selectedCategory });
       onUserUpdate?.({ lat: r.lat, lng: r.lng });
       setRegionSaved(true);
       setEditRegion(false);
@@ -334,6 +335,14 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                   <select value={selectedRegion} onChange={(e) => setSelectedRegion(e.target.value)}
                     style={{ padding: "0.5rem 0.75rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.9rem" }}>
                     {REGIONS.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
+                  </select>
+                  <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}
+                    style={{ padding: "0.5rem 0.75rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.9rem" }}>
+                    <option value="restauracao">🍽️ Restauração</option>
+                    <option value="eventos">🎉 Eventos</option>
+                    <option value="logistica">📦 Logística</option>
+                    <option value="casa">🏠 Casa & Limpeza</option>
+                    <option value="retalho">🛍️ Retalho</option>
                   </select>
                   <button onClick={handleSaveRegion} disabled={savingRegion}
                     style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", fontWeight: "700", cursor: "pointer", fontSize: "0.85rem", opacity: savingRegion ? 0.6 : 1 }}>

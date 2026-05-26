@@ -26,6 +26,7 @@ export function ChatModal({
   const [loading, setLoading] = useState(true);
   const [showProposal, setShowProposal] = useState(false);
   const [respondingJob, setRespondingJob] = useState<number | null>(null);
+  const [respondedJobIds, setRespondedJobIds] = useState<Set<number>>(new Set());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch messages initially and set up polling
@@ -62,6 +63,7 @@ export function ChatModal({
     setRespondingJob(jobId);
     try {
       await api.respondToProposal(jobId, accept);
+      setRespondedJobIds((prev) => new Set([...prev, jobId]));
       const data = await api.getMessages(partnerId, jobId);
       setMessages(data);
     } catch (err: any) {
@@ -132,7 +134,7 @@ export function ChatModal({
                 if (msg.messageType === "job_proposal") {
                   let proposal: any = null;
                   try { proposal = JSON.parse(msg.content); } catch { /* ignore */ }
-                  const canRespond = isWorker && !isMe;
+                  const canRespond = isWorker && !isMe && !respondedJobIds.has(proposal?.jobId ?? 0);
                   const isResponding = respondingJob === proposal?.jobId;
                   return (
                     <div key={msg.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
@@ -165,6 +167,9 @@ export function ChatModal({
                               </div>
                             )}
                             {isMe && <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--muted)", textAlign: "right" }}>Aguarda resposta do trabalhador...</p>}
+                            {!isMe && !canRespond && respondedJobIds.has(proposal?.jobId ?? 0) && (
+                              <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--muted)", fontStyle: "italic" }}>✓ Já respondeste a esta proposta</p>
+                            )}
                           </div>
                         ) : (
                           <div style={{ padding: "10px 14px" }}><p style={{ margin: 0, color: "var(--muted)", fontSize: "13px" }}>{msg.content}</p></div>
@@ -177,9 +182,30 @@ export function ChatModal({
                   );
                 }
 
+                // Proposal accepted — different message per side
+                if (msg.messageType === "proposal_accepted") {
+                  return (
+                    <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
+                      {isMe ? (
+                        // Worker: waiting for payment
+                        <div style={{ padding: "6px 14px", borderRadius: "10px", background: "rgba(255,210,51,0.1)", border: "1px solid rgba(255,210,51,0.3)", maxWidth: "85%", textAlign: "center" }}>
+                          <p style={{ margin: 0, fontSize: "12px", color: "#f59e0b", fontWeight: 600 }}>⏳ Proposta aceite — a aguardar pagamento de {msg.toName}</p>
+                          <span style={{ fontSize: "10px", color: "var(--muted)", opacity: 0.7 }}>{formattedTime}</span>
+                        </div>
+                      ) : (
+                        // Employer: action prompt
+                        <div style={{ padding: "6px 14px", borderRadius: "10px", background: "rgba(34,201,122,0.1)", border: "1px solid rgba(34,201,122,0.3)", maxWidth: "85%", textAlign: "center" }}>
+                          <p style={{ margin: 0, fontSize: "12px", color: "var(--green)", fontWeight: 600 }}>{msg.content}</p>
+                          <span style={{ fontSize: "10px", color: "var(--muted)", opacity: 0.7 }}>{formattedTime}</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                }
+
                 // System messages (payment, application, warnings, etc.)
                 if (msg.messageType !== "text") {
-                  const color = msg.messageType === "payment_escrow" || msg.messageType === "payment_released" || msg.messageType === "proposal_accepted" ? "var(--green)"
+                  const color = msg.messageType === "payment_escrow" || msg.messageType === "payment_released" ? "var(--green)"
                     : msg.messageType === "proposal_rejected" ? "#ef4444"
                     : msg.messageType === "admin_warning" ? "#f59e0b"
                     : "var(--muted)";

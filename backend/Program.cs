@@ -165,32 +165,7 @@ webApp.MapPost("/api/auth/logout", async (HttpContext context) =>
     return Results.Ok(new { message = "Sessão terminada." });
 });
 
-// Dev-only: force-reset admin password to 123456
-webApp.MapGet("/api/setup/reset-admin", () =>
-{
-    try
-    {
-        string hash = PasswordHasher.Hash("123456");
-        string now  = DateTime.UtcNow.ToString("o");
-        var existing = Database.ExecuteQuery("SELECT id FROM users WHERE email = 'admin@flexjob.com'");
-        if (existing.Count == 0)
-        {
-            Database.ExecuteNonQuery(
-                @"INSERT INTO users (name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
-                  VALUES ('Admin FlexJob', 'admin@flexjob.com', @hash, 'admin', 'https://i.pravatar.cc/150?img=8', 'Administrador da plataforma FlexJob.', 5.0, 0, 38.7169, -9.1399, @now)",
-                new() { { "@hash", hash }, { "@now", now } });
-            return Results.Ok(new { message = "Admin criado com password 123456." });
-        }
-        Database.ExecuteNonQuery(
-            "UPDATE users SET password_hash = @hash, role = 'admin' WHERE email = 'admin@flexjob.com'",
-            new() { { "@hash", hash } });
-        return Results.Ok(new { message = "Password do admin redefinida para 123456." });
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(ex.Message);
-    }
-});
+// Dev-only reset-admin endpoint removed.
 
 webApp.MapGet("/api/auth/me", async (HttpContext context) =>
 {
@@ -617,54 +592,6 @@ webApp.MapPost("/api/jobs/applications/respond", (HttpContext context, RespondRe
     return Results.Ok(new { message = "Candidatura respondida com sucesso!" });
 });
 
-webApp.MapPost("/api/jobs/complete", (HttpContext context, CompleteJobRequest request) =>
-{
-    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
-    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
-
-    // Ensure the requester is the employer of the job
-    var jobs = Database.ExecuteQuery("SELECT employer_id, worker_id, status FROM jobs WHERE id = @jobId", new() { { "@jobId", request.JobId } });
-    if (jobs.Count == 0) return Results.NotFound(new { message = "Tarefa não encontrada." });
-    
-    var job = jobs[0];
-    if (Convert.ToInt32(job["employer_id"]) != userId) return Results.Json(new { message = "Não autorizado." }, statusCode: 403);
-    if (job["status"]?.ToString() == "completed") return Results.BadRequest(new { message = "A tarefa já está concluída." });
-
-    var workerIdVal = job["worker_id"];
-    if (workerIdVal == null || workerIdVal == DBNull.Value)
-    {
-        return Results.BadRequest(new { message = "Não podes concluir uma tarefa que não tem trabalhador atribuído." });
-    }
-    var workerId = Convert.ToInt32(workerIdVal);
-
-    // Update job status
-    Database.ExecuteNonQuery("UPDATE jobs SET status = 'completed' WHERE id = @jobId", new() { { "@jobId", request.JobId } });
-
-    // Insert review
-    Database.ExecuteNonQuery(
-        @"INSERT INTO reviews (job_id, from_user_id, to_user_id, rating, comment, created_at)
-          VALUES (@jobId, @from, @to, @rating, @comment, @createdAt)",
-        new()
-        {
-            { "@jobId", request.JobId },
-            { "@from", userId },
-            { "@to", workerId },
-            { "@rating", Math.Clamp(request.Rating, 1.0, 5.0) },
-            { "@comment", request.Comment ?? "" },
-            { "@createdAt", DateTime.UtcNow.ToString("o") }
-        });
-
-    // Recalculate average rating of worker
-    var ratings = Database.ExecuteQuery("SELECT AVG(rating) as avg_rating FROM reviews WHERE to_user_id = @workerId", new() { { "@workerId", workerId } });
-    if (ratings.Count > 0 && ratings[0]["avg_rating"] != null && ratings[0]["avg_rating"] != DBNull.Value)
-    {
-        double avgRating = Convert.ToDouble(ratings[0]["avg_rating"]);
-        Database.ExecuteNonQuery("UPDATE users SET rating = @rating WHERE id = @workerId", new() { { "@rating", avgRating }, { "@workerId", workerId } });
-    }
-
-    return Results.Ok(new { message = "Tarefa concluída e avaliação registada com sucesso!" });
-});
-
 // --- Workers/Availability Endpoints ---
 
 webApp.MapGet("/api/workers", (HttpContext context, double? lat, double? lng, double? radius) =>
@@ -707,7 +634,8 @@ webApp.MapGet("/api/workers", (HttpContext context, double? lat, double? lng, do
             startTime = w["start_time"]?.ToString(),
             endTime = w["end_time"]?.ToString(),
             hourlyRate = Convert.ToDouble(w["hourly_rate"]),
-            isActive = Convert.ToInt32(w["is_active"]) == 1
+            isActive = Convert.ToInt32(w["is_active"]) == 1,
+            category = w.ContainsKey("category") ? w["category"]?.ToString() ?? "outros" : "outros"
         });
     }
 
@@ -727,9 +655,13 @@ webApp.MapPost("/api/workers/availability", (HttpContext context, AvailabilityRe
 
     // Insert or replace availability in MySQL using ON DUPLICATE KEY UPDATE
     Database.ExecuteNonQuery(
-        @"INSERT INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active)
-          VALUES (@workerId, @lat, @lng, @radius, @startTime, @endTime, @hourlyRate, @isActive)
-          ON DUPLICATE KEY UPDATE lat = @lat, lng = @lng, radius = @radius, start_time = @startTime, end_time = @endTime, hourly_rate = @hourlyRate, is_active = @isActive",
+        @"INSERT INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active, category)
+          VALUES (@workerId, @lat, @lng, @radius, @startTime, @endTime, @hourlyRate, @isActive, @category)
+          ON CONFLICT(worker_id) DO UPDATE SET
+            lat = excluded.lat, lng = excluded.lng, radius = excluded.radius,
+            start_time = excluded.start_time, end_time = excluded.end_time,
+            hourly_rate = excluded.hourly_rate, is_active = excluded.is_active,
+            category = excluded.category",
         new()
         {
             { "@workerId", userId },
@@ -739,7 +671,8 @@ webApp.MapPost("/api/workers/availability", (HttpContext context, AvailabilityRe
             { "@startTime", request.StartTime ?? "" },
             { "@endTime", request.EndTime ?? "" },
             { "@hourlyRate", request.HourlyRate },
-            { "@isActive", request.IsActive ? 1 : 0 }
+            { "@isActive", request.IsActive ? 1 : 0 },
+            { "@category", request.Category ?? "outros" }
         });
 
     // Also update the user's main location so the map reflects the new region
@@ -1247,7 +1180,7 @@ webApp.MapPost("/api/jobs/propose", (HttpContext context, ProposeJobRequest requ
                 { "@pay", jobPay }, { "@dur", jobDuration },
                 { "@wd", jobWorkDate }, { "@now", now }
             });
-        var idRow = Database.ExecuteQuery("SELECT LAST_INSERT_ID() AS id");
+        var idRow = Database.ExecuteQuery("SELECT last_insert_rowid() AS id");
         jobId = Convert.ToInt32(idRow[0]["id"]);
     }
 
@@ -1728,10 +1661,9 @@ public record LoginRequest(string Email, string Password);
 public record JobPostRequest(string Title, string Description, string Category, double Lat, double Lng, string Address, double Pay, string PayType, string Duration, string Photo, string? WorkDate = null);
 public record ApplyRequest(int JobId);
 public record RespondRequest(int ApplicationId, bool Accept);
-public record AvailabilityRequest(double Lat, double Lng, double Radius, string StartTime, string EndTime, double HourlyRate, bool IsActive);
+public record AvailabilityRequest(double Lat, double Lng, double Radius, string StartTime, string EndTime, double HourlyRate, bool IsActive, string? Category = null);
 public record MessageRequest(int ToUserId, int? JobId, string Content);
 public record ProfileUpdateRequest(string Name, string Bio, string? Avatar = null);
-public record CompleteJobRequest(int JobId, double Rating, string Comment);
 public record EscrowRequest(int JobId, double Hours = 1.0, string? WorkDate = null, string? Notes = null);
 public record ReleasePaymentRequest(int JobId, double Rating, string Comment);
 public record AcceptWorkerRequest(int JobId, int WorkerId, bool Accept);

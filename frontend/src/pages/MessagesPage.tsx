@@ -61,6 +61,7 @@ export function MessagesPage({
   const [reportLoading, setReportLoading] = useState(false);
   const [reportSent, setReportSent] = useState(false);
   const [showProposalModal, setShowProposalModal] = useState(false);
+  const [respondedProposals, setRespondedProposals] = useState<Set<number>>(new Set());
   const [hiddenConvs, setHiddenConvs] = useState<string[]>(() => {
     try { return JSON.parse(localStorage.getItem("flexjob_hidden_convs") || "[]"); } catch { return []; }
   });
@@ -275,6 +276,7 @@ export function MessagesPage({
   async function handleRespondProposal(jobId: number, accept: boolean) {
     try {
       await api.respondToProposal(jobId, accept);
+      setRespondedProposals((prev) => new Set([...prev, jobId]));
       const currentJobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
       if (accept) {
         setSelectedConv((prev) => prev ? { ...prev, jobId } : prev);
@@ -722,6 +724,7 @@ export function MessagesPage({
                       userId={user.id ?? 0}
                       onAcceptWorker={isEmployer && jobDetail?.status === "open" ? handleAcceptWorker : undefined}
                       onRespondProposal={!isEmployer ? handleRespondProposal : undefined}
+                      respondedProposals={respondedProposals}
                     />
                   ))
                 )}
@@ -949,11 +952,12 @@ export function MessagesPage({
   );
 }
 
-function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal }: {
+function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal, respondedProposals }: {
   msg: ChatMessage;
   userId: number;
   onAcceptWorker?: (workerId: number, accept: boolean) => void;
   onRespondProposal?: (jobId: number, accept: boolean) => void;
+  respondedProposals?: Set<number>;
 }) {
   const isMe = msg.fromUserId === userId;
   const type = msg.messageType ?? "text";
@@ -1014,7 +1018,7 @@ function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal }: {
               {data.address && <span style={{ fontSize: "0.78rem", color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "6px", padding: "2px 7px" }}>📍 {data.address}</span>}
             </div>
           </div>
-          {onRespondProposal && jobId > 0 ? (
+          {onRespondProposal && jobId > 0 && !respondedProposals?.has(jobId) ? (
             <div style={{ padding: "8px 14px 12px", display: "flex", gap: "8px" }}>
               <button onClick={() => onRespondProposal(jobId, true)}
                 style={{ flex: 1, padding: "8px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #22c97a, #16a361)", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>
@@ -1028,7 +1032,11 @@ function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal }: {
           ) : (
             <div style={{ padding: "6px 14px 10px" }}>
               <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", fontStyle: "italic" }}>
-                {isMe ? "Aguarda a resposta do trabalhador..." : "Proposta recebida"}
+                {respondedProposals?.has(jobId)
+                  ? "✓ Já respondeste a esta proposta"
+                  : isMe
+                  ? "Aguarda a resposta do trabalhador..."
+                  : "Proposta recebida"}
               </p>
             </div>
           )}
@@ -1049,12 +1057,24 @@ function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal }: {
   }
 
   if (type === "proposal_accepted") {
+    // isMe = worker (sent the acceptance); !isMe = employer (receives the action prompt)
     return (
       <div style={{ display: "flex", justifyContent: "center", margin: "0.4rem 0" }}>
-        <div style={{ padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%", background: "rgba(34,201,122,0.12)", border: "1px solid rgba(34,201,122,0.3)", display: "flex", alignItems: "center", gap: "0.6rem" }}>
-          <CheckCircle size={16} style={{ color: "#22c97a", flexShrink: 0 }} />
-          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
-        </div>
+        {isMe ? (
+          // Worker view: waiting for employer payment
+          <div style={{ padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%", background: "rgba(255,210,51,0.1)", border: "1px solid rgba(255,210,51,0.3)", display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <Clock size={16} style={{ color: "#f59e0b", flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>
+              ⏳ Proposta aceite — a aguardar pagamento de {msg.toName}
+            </p>
+          </div>
+        ) : (
+          // Employer view: action prompt
+          <div style={{ padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%", background: "rgba(34,201,122,0.12)", border: "1px solid rgba(34,201,122,0.3)", display: "flex", alignItems: "center", gap: "0.6rem" }}>
+            <CheckCircle size={16} style={{ color: "#22c97a", flexShrink: 0 }} />
+            <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+          </div>
+        )}
       </div>
     );
   }

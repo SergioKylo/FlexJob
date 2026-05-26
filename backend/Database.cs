@@ -1,12 +1,11 @@
 using System;
-using System.IO;
 using System.Collections.Generic;
-using MySqlConnector;
+using Microsoft.Data.Sqlite;
 
 public static class Database
 {
-    private static readonly string ConnectionString = Environment.GetEnvironmentVariable("CONNECTION_STRING") 
-        ?? "Server=localhost;Port=3306;Database=flexjob;Uid=root;Pwd=rootpassword;";
+    private static readonly string DbPath = Environment.GetEnvironmentVariable("DB_PATH") ?? "flexjob.db";
+    private static string ConnectionString => $"Data Source={DbPath}";
 
     private static string Hash(string password)
     {
@@ -18,164 +17,149 @@ public static class Database
 
     public static void Initialize()
     {
-        int maxRetries = 15;
-        int delaySeconds = 3;
-        MySqlConnection connection = null;
+        Console.WriteLine($"Using SQLite database at: {DbPath}");
 
-        for (int i = 1; i <= maxRetries; i++)
+        // SQLite creates the file automatically — no retry loop needed
+        using var connection = new SqliteConnection(ConnectionString);
+        connection.Open();
+
+        // Enable WAL mode (better performance for concurrent reads) and foreign keys
+        ExecuteNonQueryInternal("PRAGMA journal_mode=WAL;", null, connection);
+        ExecuteNonQueryInternal("PRAGMA foreign_keys=ON;", null, connection);
+
+        try
         {
-            try
-            {
-                connection = new MySqlConnection(ConnectionString);
-                connection.Open();
-                Console.WriteLine("Successfully connected to MySQL database.");
-                break;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Attempt {i}/{maxRetries}] Database not ready yet: {ex.Message}. Retrying in {delaySeconds}s...");
-                if (i == maxRetries) throw;
-                System.Threading.Thread.Sleep(delaySeconds * 1000);
-            }
+            // Users table
+            ExecuteNonQueryInternal(@"
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    avatar TEXT,
+                    bio TEXT,
+                    rating REAL DEFAULT 5.0,
+                    wallet_balance REAL DEFAULT 0,
+                    location_lat REAL,
+                    location_lng REAL,
+                    created_at TEXT NOT NULL
+                );", null, connection);
+
+            // Jobs table
+            ExecuteNonQueryInternal(@"
+                CREATE TABLE IF NOT EXISTS jobs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    lat REAL NOT NULL,
+                    lng REAL NOT NULL,
+                    address TEXT NOT NULL,
+                    pay REAL NOT NULL,
+                    pay_type TEXT NOT NULL,
+                    duration TEXT,
+                    status TEXT NOT NULL,
+                    payment_status TEXT NOT NULL DEFAULT 'none',
+                    payment_amount REAL NOT NULL DEFAULT 0,
+                    employer_id INTEGER NOT NULL,
+                    worker_id INTEGER,
+                    work_date TEXT NOT NULL DEFAULT '',
+                    photo TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (employer_id) REFERENCES users(id),
+                    FOREIGN KEY (worker_id) REFERENCES users(id)
+                );", null, connection);
+
+            // Applications table
+            ExecuteNonQueryInternal(@"
+                CREATE TABLE IF NOT EXISTS applications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id INTEGER NOT NULL,
+                    worker_id INTEGER NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES jobs(id),
+                    FOREIGN KEY (worker_id) REFERENCES users(id),
+                    UNIQUE(job_id, worker_id)
+                );", null, connection);
+
+            // Availabilities table
+            ExecuteNonQueryInternal(@"
+                CREATE TABLE IF NOT EXISTS availabilities (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    worker_id INTEGER NOT NULL UNIQUE,
+                    lat REAL NOT NULL,
+                    lng REAL NOT NULL,
+                    radius REAL NOT NULL,
+                    start_time TEXT,
+                    end_time TEXT,
+                    hourly_rate REAL NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    category TEXT NOT NULL DEFAULT 'outros',
+                    FOREIGN KEY (worker_id) REFERENCES users(id)
+                );", null, connection);
+
+            // Messages table
+            ExecuteNonQueryInternal(@"
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    from_user_id INTEGER NOT NULL,
+                    to_user_id INTEGER NOT NULL,
+                    job_id INTEGER,
+                    content TEXT NOT NULL,
+                    message_type TEXT NOT NULL DEFAULT 'text',
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (from_user_id) REFERENCES users(id),
+                    FOREIGN KEY (to_user_id) REFERENCES users(id),
+                    FOREIGN KEY (job_id) REFERENCES jobs(id)
+                );", null, connection);
+
+            // Reports table
+            ExecuteNonQueryInternal(@"
+                CREATE TABLE IF NOT EXISTS reports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reporter_id INTEGER NOT NULL,
+                    reported_user_id INTEGER NOT NULL,
+                    job_id INTEGER,
+                    reason TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (reporter_id) REFERENCES users(id),
+                    FOREIGN KEY (reported_user_id) REFERENCES users(id)
+                );", null, connection);
+
+            // Reviews table
+            ExecuteNonQueryInternal(@"
+                CREATE TABLE IF NOT EXISTS reviews (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    job_id INTEGER NOT NULL,
+                    from_user_id INTEGER NOT NULL,
+                    to_user_id INTEGER NOT NULL,
+                    rating REAL NOT NULL,
+                    comment TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (job_id) REFERENCES jobs(id),
+                    FOREIGN KEY (from_user_id) REFERENCES users(id),
+                    FOREIGN KEY (to_user_id) REFERENCES users(id)
+                );", null, connection);
+
+            Console.WriteLine("SQLite tables ready.");
         }
-
-        using (connection)
+        catch (Exception ex)
         {
-            try
-            {
-                // Users table
-                var createUsers = @"
-                    CREATE TABLE IF NOT EXISTS users (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        name VARCHAR(255) NOT NULL,
-                        email VARCHAR(255) NOT NULL UNIQUE,
-                        password_hash VARCHAR(255) NOT NULL,
-                        role VARCHAR(50) NOT NULL, /* worker, employer */
-                        avatar VARCHAR(500),
-                        bio TEXT,
-                        rating DOUBLE DEFAULT 5.0,
-                        wallet_balance DOUBLE DEFAULT 0,
-                        location_lat DOUBLE,
-                        location_lng DOUBLE,
-                        created_at VARCHAR(100) NOT NULL
-                    );";
-                ExecuteNonQueryInternal(createUsers, null, connection);
-
-                // Jobs table
-                var createJobs = @"
-                    CREATE TABLE IF NOT EXISTS jobs (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        title VARCHAR(255) NOT NULL,
-                        description TEXT NOT NULL,
-                        category VARCHAR(100) NOT NULL,
-                        lat DOUBLE NOT NULL,
-                        lng DOUBLE NOT NULL,
-                        address VARCHAR(255) NOT NULL,
-                        pay DOUBLE NOT NULL,
-                        pay_type VARCHAR(50) NOT NULL, /* hourly, fixed */
-                        duration VARCHAR(100),
-                        status VARCHAR(50) NOT NULL, /* open, accepted, completed */
-                        payment_status VARCHAR(50) NOT NULL DEFAULT 'none', /* none, escrowed, released */
-                        payment_amount DOUBLE NOT NULL DEFAULT 0,
-                        employer_id INT NOT NULL,
-                        worker_id INT,
-                        photo LONGTEXT, /* Base64 string for job photo */
-                        created_at VARCHAR(100) NOT NULL,
-                        FOREIGN KEY (employer_id) REFERENCES users(id),
-                        FOREIGN KEY (worker_id) REFERENCES users(id)
-                    );";
-                ExecuteNonQueryInternal(createJobs, null, connection);
-
-                // Applications table
-                var createApplications = @"
-                    CREATE TABLE IF NOT EXISTS applications (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        job_id INT NOT NULL,
-                        worker_id INT NOT NULL,
-                        status VARCHAR(50) NOT NULL, /* pending, accepted, rejected */
-                        created_at VARCHAR(100) NOT NULL,
-                        FOREIGN KEY (job_id) REFERENCES jobs(id),
-                        FOREIGN KEY (worker_id) REFERENCES users(id),
-                        UNIQUE KEY unique_job_worker (job_id, worker_id)
-                    );";
-                ExecuteNonQueryInternal(createApplications, null, connection);
-
-                // Availabilities table
-                var createAvailabilities = @"
-                    CREATE TABLE IF NOT EXISTS availabilities (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        worker_id INT NOT NULL UNIQUE,
-                        lat DOUBLE NOT NULL,
-                        lng DOUBLE NOT NULL,
-                        radius DOUBLE NOT NULL,
-                        start_time VARCHAR(50),
-                        end_time VARCHAR(50),
-                        hourly_rate DOUBLE NOT NULL,
-                        is_active INT NOT NULL DEFAULT 1,
-                        FOREIGN KEY (worker_id) REFERENCES users(id)
-                    );";
-                ExecuteNonQueryInternal(createAvailabilities, null, connection);
-
-                // Messages table
-                var createMessages = @"
-                    CREATE TABLE IF NOT EXISTS messages (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        from_user_id INT NOT NULL,
-                        to_user_id INT NOT NULL,
-                        job_id INT,
-                        content TEXT NOT NULL,
-                        message_type VARCHAR(50) NOT NULL DEFAULT 'text', /* text, application, payment_escrow, payment_released */
-                        created_at VARCHAR(100) NOT NULL,
-                        FOREIGN KEY (from_user_id) REFERENCES users(id),
-                        FOREIGN KEY (to_user_id) REFERENCES users(id),
-                        FOREIGN KEY (job_id) REFERENCES jobs(id)
-                    );";
-                ExecuteNonQueryInternal(createMessages, null, connection);
-
-                // Reports table
-                var createReports = @"
-                    CREATE TABLE IF NOT EXISTS reports (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        reporter_id INT NOT NULL,
-                        reported_user_id INT NOT NULL,
-                        job_id INT,
-                        reason TEXT,
-                        created_at VARCHAR(100) NOT NULL,
-                        FOREIGN KEY (reporter_id) REFERENCES users(id),
-                        FOREIGN KEY (reported_user_id) REFERENCES users(id)
-                    );";
-                ExecuteNonQueryInternal(createReports, null, connection);
-
-                // Reviews table
-                var createReviews = @"
-                    CREATE TABLE IF NOT EXISTS reviews (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        job_id INT NOT NULL,
-                        from_user_id INT NOT NULL,
-                        to_user_id INT NOT NULL,
-                        rating DOUBLE NOT NULL,
-                        comment TEXT,
-                        created_at VARCHAR(100) NOT NULL,
-                        FOREIGN KEY (job_id) REFERENCES jobs(id),
-                        FOREIGN KEY (from_user_id) REFERENCES users(id),
-                        FOREIGN KEY (to_user_id) REFERENCES users(id)
-                    );";
-                ExecuteNonQueryInternal(createReviews, null, connection);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error initializing database: {ex.Message}");
-                throw;
-            }
+            Console.WriteLine($"Error initializing database: {ex.Message}");
+            throw;
         }
 
         // Schema migrations — safe to fail if columns already exist
-        try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN wallet_balance DOUBLE NOT NULL DEFAULT 0"); } catch { }
-        try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_status VARCHAR(50) NOT NULL DEFAULT 'none'"); } catch { }
-        try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_amount DOUBLE NOT NULL DEFAULT 0"); } catch { }
-        try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN work_date VARCHAR(50) NOT NULL DEFAULT ''"); } catch { }
-        try { ExecuteNonQuery("ALTER TABLE users MODIFY COLUMN avatar MEDIUMTEXT"); } catch { }
-        try { ExecuteNonQuery("ALTER TABLE messages ADD COLUMN message_type VARCHAR(50) NOT NULL DEFAULT 'text'"); } catch { }
+        // (SQLite does not support IF NOT EXISTS on ALTER TABLE)
+        try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN wallet_balance REAL NOT NULL DEFAULT 0"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_status TEXT NOT NULL DEFAULT 'none'"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN payment_amount REAL NOT NULL DEFAULT 0"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN work_date TEXT NOT NULL DEFAULT ''"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE messages ADD COLUMN message_type TEXT NOT NULL DEFAULT 'text'"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE availabilities ADD COLUMN category TEXT NOT NULL DEFAULT 'outros'"); } catch { }
+        // Note: SQLite does not support MODIFY COLUMN — skip that migration
 
         // Seed mock data if database is empty
         try
@@ -208,7 +192,6 @@ public static class Database
             }
             else
             {
-                // Always reset password hash + role to guarantee login works
                 ExecuteNonQuery(
                     "UPDATE users SET password_hash = @hash, role = 'admin' WHERE email = 'admin@flexjob.com'",
                     new() { { "@hash", pwhash } });
@@ -225,7 +208,7 @@ public static class Database
             string pwhash2 = Hash("123456");
             string now2 = DateTime.UtcNow.ToString("o");
             ExecuteNonQuery(@"
-                INSERT IGNORE INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at) VALUES
+                INSERT OR IGNORE INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at) VALUES
                 (15, 'Braga Eventos & Catering', 'bragaevents@email.com', @hash, 'employer',
                     'https://i.pravatar.cc/150?img=11',
                     'Empresa local de eventos, casamentos e catering na região de Braga. Qualidade e tradição minhota.', 4.7, 350.0, 41.5454, -8.4265, @now),
@@ -244,13 +227,13 @@ public static class Database
                 new() { { "@hash", pwhash2 }, { "@now", now2 } });
 
             ExecuteNonQuery(@"
-                INSERT IGNORE INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active) VALUES
+                INSERT OR IGNORE INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active) VALUES
                 (16, 41.5510, -8.4310, 10.0, '10:00', '22:00', 10.0, 1),
                 (17, 41.5400, -8.4200,  8.0, '09:00', '20:00', 11.0, 1)");
 
             string ragaPhoto2 = "https://picsum.photos/seed/braga2026/400/220";
             ExecuteNonQuery(@"
-                INSERT IGNORE INTO jobs (id, title, description, category, lat, lng, address, pay, pay_type, duration, status, payment_status, payment_amount, employer_id, worker_id, work_date, photo, created_at) VALUES
+                INSERT OR IGNORE INTO jobs (id, title, description, category, lat, lng, address, pay, pay_type, duration, status, payment_status, payment_amount, employer_id, worker_id, work_date, photo, created_at) VALUES
                 (16, 'Barman em Festa Académica',
                     'Servir bebidas e cocktails em festa de final de curso na Universidade do Minho. Ambiente animado e jovem.',
                     'restauracao', 41.5454, -8.4265, 'Universidade do Minho, Campus de Gualtar, Braga',
@@ -298,7 +281,7 @@ public static class Database
 
     private static void SeedMockData()
     {
-        Console.WriteLine("Seeding mock data into MySQL database...");
+        Console.WriteLine("Seeding mock data into SQLite database...");
         string pwhash = Hash("123456");
         string now    = DateTime.UtcNow.ToString("o");
         string d1ago  = DateTime.UtcNow.AddDays(-1).ToString("o");
@@ -399,7 +382,6 @@ public static class Database
         ExecuteNonQuery(@"
             INSERT INTO jobs (id, title, description, category, lat, lng, address, pay, pay_type, duration, status, payment_status, payment_amount, employer_id, worker_id, work_date, photo, created_at)
             VALUES
-            -- OPEN jobs
             (1,  'Apoio de Mesa no Chiado',
                  'Servir mesas, acolher clientes e recolher pratos no horário de almoço. Experiência mínima de 6 meses em restauração.',
                  'restauracao', 38.7109, -9.1424, 'Rua Garrett 15, Chiado, Lisboa',
@@ -436,8 +418,6 @@ public static class Database
                  'Controlo de entradas e supervisão de área VIP em festa privada na Quinta de Monserrate.',
                  'eventos', 38.7963, -9.3916, 'Quinta de Monserrate, Sintra',
                  14.0, 'hourly', '6 horas', 'open', 'none', 0, 5, NULL, '2026-06-21', @solarPhoto, @now),
-
-            -- BRAGA jobs
             (16, 'Barman em Festa Académica',
                  'Servir bebidas e cocktails em festa de final de curso na Universidade do Minho. Ambiente animado e jovem.',
                  'restauracao', 41.5454, -8.4265, 'Universidade do Minho, Campus de Gualtar, Braga',
@@ -458,8 +438,6 @@ public static class Database
                  'Limpeza geral do pavilhão após evento desportivo. Varrer, lavar pavimento e recolher lixo.',
                  'casa', 41.5550, -8.4100, 'Pavilhão Desportivo Municipal, Braga',
                  10.0, 'hourly', '3 horas', 'open', 'none', 0, 15, NULL, '2026-05-27', @ragaPhoto, @now),
-
-            -- ACCEPTED jobs (payment escrowed)
             (8,  'Estafeta Urbano Lisboa',
                  'Entregas de pequenas encomendas no centro de Lisboa de bicicleta ou trotinete elétrica.',
                  'logistica', 38.7200, -9.1380, 'Praça do Comércio, Lisboa',
@@ -468,8 +446,6 @@ public static class Database
                  'Montagem e desmontagem de bancas do mercado semanal. Trabalho matinal das 06h às 12h.',
                  'eventos', 38.7150, -9.1290, 'Largo de Intendente, Lisboa',
                  10.0, 'hourly', '4 horas', 'accepted', 'escrowed', 40.0, 5, 12, '2026-05-24', @solarPhoto, @d1ago),
-
-            -- COMPLETED jobs (payment released)
             (4,  'Limpeza de Cozinha Exaustiva',
                  'Limpeza profunda de bancadas, fornos e louças após evento privado. Produtos fornecidos.',
                  'casa', 38.7109, -9.1424, 'Rua de São Paulo 23, Cais do Sodré, Lisboa',
@@ -553,12 +529,12 @@ public static class Database
 
     public static int ExecuteNonQuery(string sql, Dictionary<string, object> parameters = null)
     {
-        using var connection = new MySqlConnection(ConnectionString);
+        using var connection = new SqliteConnection(ConnectionString);
         connection.Open();
         return ExecuteNonQueryInternal(sql, parameters, connection);
     }
 
-    private static int ExecuteNonQueryInternal(string sql, Dictionary<string, object> parameters, MySqlConnection connection)
+    private static int ExecuteNonQueryInternal(string sql, Dictionary<string, object> parameters, SqliteConnection connection)
     {
         using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -575,7 +551,7 @@ public static class Database
     public static List<Dictionary<string, object>> ExecuteQuery(string sql, Dictionary<string, object> parameters = null)
     {
         var results = new List<Dictionary<string, object>>();
-        using var connection = new MySqlConnection(ConnectionString);
+        using var connection = new SqliteConnection(ConnectionString);
         connection.Open();
         using var command = connection.CreateCommand();
         command.CommandText = sql;
@@ -602,10 +578,10 @@ public static class Database
 
     public static long GetLastInsertRowId()
     {
-        using var connection = new MySqlConnection(ConnectionString);
+        using var connection = new SqliteConnection(ConnectionString);
         connection.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT LAST_INSERT_ID();";
+        command.CommandText = "SELECT last_insert_rowid();";
         return Convert.ToInt64(command.ExecuteScalar());
     }
 }

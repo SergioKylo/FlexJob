@@ -61,6 +61,18 @@ export function App() {
       });
   }, []);
 
+  // Refresh wallet balance in topbar every 8 seconds
+  useEffect(() => {
+    if (!user) return;
+    const tick = () =>
+      api.getWallet()
+        .then((w) => setUser((prev) => prev ? { ...prev, walletBalance: w.balance } : prev))
+        .catch(() => {});
+    tick();
+    const id = setInterval(tick, 8000);
+    return () => clearInterval(id);
+  }, [user?.id]);
+
   // Fetch jobs / workers when user or view changes
   useEffect(() => {
     if (!user) return;
