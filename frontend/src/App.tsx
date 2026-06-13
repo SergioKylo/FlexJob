@@ -45,9 +45,11 @@ export function App() {
   const t = (key: TranslationKey) => translations[language][key];
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
+    // The admin panel is designed dark-only — force dark while an admin is logged in
+    const applied = user?.role === "admin" ? "dark" : theme;
+    document.documentElement.setAttribute("data-theme", applied);
     localStorage.setItem("fj-theme", theme);
-  }, [theme]);
+  }, [theme, user?.role]);
 
   const allItems = useMemo(() => [...needs, ...workers], [needs, workers]);
 

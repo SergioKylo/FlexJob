@@ -16,7 +16,7 @@ type AdminStats = {
 type AdminUser = {
   id: number; name: string; email: string; role: string;
   avatar?: string; bio?: string; rating: number; walletBalance: number; createdAt: string;
-  warningCount?: number; banned?: boolean;
+  warningCount?: number; banned?: boolean; bannedUntil?: string | null;
 };
 type AdminJob = {
   id: number; title: string; description: string; category: string; address: string;
@@ -110,14 +110,14 @@ function fmt(d: string) {
 
 // ── Warning badge ─────────────────────────────────────────────────────────────
 
-function WarningBadge({ count, banned }: { count: number; banned: boolean }) {
+function WarningBadge({ count, banned, bannedUntil }: { count: number; banned: boolean; bannedUntil?: string | null }) {
   if (banned) {
     return (
       <span style={{
         padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 800,
         background: "rgba(239,68,68,0.18)", color: "#ef4444", whiteSpace: "nowrap",
         border: "1px solid rgba(239,68,68,0.35)",
-      }}>BANIDO</span>
+      }}>{fmtBannedUntil(bannedUntil)}</span>
     );
   }
   if (count === 0) return null;
@@ -137,7 +137,7 @@ async function adminSendMessageRaw(
   toUserId: number,
   content: string,
   isWarning: boolean,
-): Promise<{ message: string; warningCount?: number; banned?: boolean }> {
+): Promise<{ message: string; warningCount?: number; banned?: boolean; bannedUntil?: string | null }> {
   const res = await fetch("/api/admin/send-message", {
     method: "POST",
     credentials: "include",
@@ -150,6 +150,34 @@ async function adminSendMessageRaw(
     throw new Error(msg);
   }
   return res.json();
+}
+
+// ── Helper: moderate user (removeWarning / unban) ─────────────────────────────
+
+async function adminModerate(
+  userId: number,
+  action: "removeWarning" | "unban",
+): Promise<{ message: string; warningCount: number; banned: boolean }> {
+  const res = await fetch("/api/admin/users/moderate", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, action }),
+  });
+  if (!res.ok) {
+    let msg = "Erro ao moderar utilizador.";
+    try { const d = await res.json(); msg = d.message || msg; } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+// ── Helper: format bannedUntil date ───────────────────────────────────────────
+
+function fmtBannedUntil(bannedUntil?: string | null): string {
+  if (!bannedUntil) return "BANIDO";
+  try { return `Banido até ${new Date(bannedUntil).toLocaleDateString("pt-PT")}`; }
+  catch { return "BANIDO"; }
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -318,22 +346,23 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       const result = await adminSendMessageRaw(userPanelTarget.id, userPanelInput.trim(), isWarning);
       setUserPanelInput("");
 
-      // Update user state (warningCount + banned)
+      // Update user state (warningCount + banned + bannedUntil)
       if (isWarning && result.warningCount !== undefined) {
         const newCount = result.warningCount;
         const newBanned = result.banned ?? false;
+        const newBannedUntil = result.bannedUntil ?? null;
         setUsers((prev) =>
           prev.map((u) =>
             u.id === userPanelTarget.id
-              ? { ...u, warningCount: newCount, banned: newBanned }
+              ? { ...u, warningCount: newCount, banned: newBanned, bannedUntil: newBannedUntil }
               : u,
           ),
         );
         setUserPanelTarget((prev) =>
-          prev ? { ...prev, warningCount: newCount, banned: newBanned } : prev,
+          prev ? { ...prev, warningCount: newCount, banned: newBanned, bannedUntil: newBannedUntil } : prev,
         );
         if (newBanned) {
-          toast.error("Utilizador banido após 3 avisos.");
+          toast.error(`Utilizador banido após 3 avisos. ${newBannedUntil ? fmtBannedUntil(newBannedUntil) : ""}`);
         } else {
           toast.info(`Aviso enviado. Contador: ${newCount}/3`);
         }
@@ -352,6 +381,33 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       toast.error(err?.message || "Erro ao enviar mensagem.");
     } finally {
       setSendingUserPanel(false);
+    }
+  }
+
+  // ── Moderation: remove warning / unban ───────────────────────────────────
+  async function handleModerate(action: "removeWarning" | "unban") {
+    if (!userPanelTarget) return;
+    const confirmMsg = action === "removeWarning"
+      ? `Remover 1 aviso de "${userPanelTarget.name}"?`
+      : `Desbanir "${userPanelTarget.name}"? O contador ficará em 2/3.`;
+    if (!confirm(confirmMsg)) return;
+    try {
+      const result = await adminModerate(userPanelTarget.id, action);
+      const newCount = result.warningCount;
+      const newBanned = result.banned;
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.id === userPanelTarget.id
+            ? { ...u, warningCount: newCount, banned: newBanned, bannedUntil: newBanned ? u.bannedUntil : null }
+            : u,
+        ),
+      );
+      setUserPanelTarget((prev) =>
+        prev ? { ...prev, warningCount: newCount, banned: newBanned, bannedUntil: newBanned ? prev.bannedUntil : null } : prev,
+      );
+      toast.success(result.message);
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao moderar utilizador.");
     }
   }
 
@@ -540,33 +596,74 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                     <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       {userPanelTarget.name}
                       <Badge label={ROLE_LABEL[userPanelTarget.role] || userPanelTarget.role} color={ROLE_COLOR[userPanelTarget.role] || "#6b7280"} />
-                      <WarningBadge count={userPanelTarget.warningCount ?? 0} banned={userPanelTarget.banned ?? false} />
+                      <WarningBadge count={userPanelTarget.warningCount ?? 0} banned={userPanelTarget.banned ?? false} bannedUntil={userPanelTarget.bannedUntil} />
                     </div>
                     <div style={{ fontSize: 12, color: "var(--muted)" }}>{userPanelTarget.email}</div>
                   </div>
-                  {/* Warning counter in header */}
+                  {/* Warning counter in header + moderation buttons */}
                   {!userPanelTarget.banned && (
-                    <div style={{
-                      padding: "6px 14px", borderRadius: 10,
-                      background: (userPanelTarget.warningCount ?? 0) >= 2 ? "rgba(239,68,68,0.1)" : "rgba(245,158,11,0.1)",
-                      border: `1px solid ${(userPanelTarget.warningCount ?? 0) >= 2 ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)"}`,
-                      fontSize: 13, fontWeight: 700,
-                      color: (userPanelTarget.warningCount ?? 0) >= 2 ? "#ef4444" : "#f59e0b",
-                      display: "flex", alignItems: "center", gap: 6,
-                    }}>
-                      <AlertTriangle size={14} />
-                      Avisos: {userPanelTarget.warningCount ?? 0}/3
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <div style={{
+                        padding: "6px 14px", borderRadius: 10,
+                        background: (userPanelTarget.warningCount ?? 0) >= 2 ? "rgba(239,68,68,0.1)" : "rgba(245,158,11,0.1)",
+                        border: `1px solid ${(userPanelTarget.warningCount ?? 0) >= 2 ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)"}`,
+                        fontSize: 13, fontWeight: 700,
+                        color: (userPanelTarget.warningCount ?? 0) >= 2 ? "#ef4444" : "#f59e0b",
+                        display: "flex", alignItems: "center", gap: 6,
+                      }}>
+                        <AlertTriangle size={14} />
+                        Avisos: {userPanelTarget.warningCount ?? 0}/3
+                      </div>
+                      {(userPanelTarget.warningCount ?? 0) > 0 && (
+                        <button
+                          onClick={() => handleModerate("removeWarning")}
+                          style={{
+                            padding: "5px 11px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                            border: "1px solid rgba(245,158,11,0.5)", cursor: "pointer",
+                            background: "rgba(245,158,11,0.1)", color: "#f59e0b",
+                            display: "flex", alignItems: "center", gap: 4,
+                          }}
+                        >
+                          − Remover aviso
+                        </button>
+                      )}
                     </div>
                   )}
                   {userPanelTarget.banned && (
-                    <div style={{
-                      padding: "6px 14px", borderRadius: 10,
-                      background: "rgba(239,68,68,0.15)",
-                      border: "1px solid rgba(239,68,68,0.4)",
-                      fontSize: 13, fontWeight: 800, color: "#ef4444",
-                      display: "flex", alignItems: "center", gap: 6,
-                    }}>
-                      CONTA BANIDA
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <div style={{
+                        padding: "6px 14px", borderRadius: 10,
+                        background: "rgba(239,68,68,0.15)",
+                        border: "1px solid rgba(239,68,68,0.4)",
+                        fontSize: 13, fontWeight: 800, color: "#ef4444",
+                        display: "flex", alignItems: "center", gap: 6,
+                      }}>
+                        {fmtBannedUntil(userPanelTarget.bannedUntil).toUpperCase()}
+                      </div>
+                      <button
+                        onClick={() => handleModerate("unban")}
+                        style={{
+                          padding: "5px 11px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                          border: "1px solid rgba(34,197,94,0.5)", cursor: "pointer",
+                          background: "rgba(34,197,94,0.1)", color: "#22c55e",
+                          display: "flex", alignItems: "center", gap: 4,
+                        }}
+                      >
+                        Desbanir
+                      </button>
+                      {(userPanelTarget.warningCount ?? 0) > 0 && (
+                        <button
+                          onClick={() => handleModerate("removeWarning")}
+                          style={{
+                            padding: "5px 11px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                            border: "1px solid rgba(245,158,11,0.5)", cursor: "pointer",
+                            background: "rgba(245,158,11,0.1)", color: "#f59e0b",
+                            display: "flex", alignItems: "center", gap: 4,
+                          }}
+                        >
+                          − Remover aviso
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -679,26 +776,28 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                       >
                         <MessageSquare size={14} /> Enviar mensagem
                       </button>
-                      {/* Formal warning button */}
-                      <button
-                        onClick={() => handleUserPanelSend(true)}
-                        disabled={!userPanelInput.trim() || sendingUserPanel || (userPanelTarget.banned ?? false)}
-                        title="Envia aviso formal — conta para o limite de 3 antes do ban"
-                        style={{
-                          flex: 1, padding: "8px 12px", borderRadius: 8,
-                          border: "2px solid #ef4444", cursor: "pointer",
-                          background: "rgba(239,68,68,0.1)", color: "#ef4444",
-                          fontSize: 13, fontWeight: 800,
-                          opacity: !userPanelInput.trim() || sendingUserPanel || (userPanelTarget.banned ?? false) ? 0.45 : 1,
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
-                        }}
-                      >
-                        <AlertTriangle size={14} /> Enviar aviso formal (conta +1)
-                      </button>
+                      {/* Formal warning button — hidden when banned */}
+                      {!(userPanelTarget.banned ?? false) && (
+                        <button
+                          onClick={() => handleUserPanelSend(true)}
+                          disabled={!userPanelInput.trim() || sendingUserPanel}
+                          title="Envia aviso formal — conta para o limite de 3 antes do ban"
+                          style={{
+                            flex: 1, padding: "8px 12px", borderRadius: 8,
+                            border: "2px solid #ef4444", cursor: "pointer",
+                            background: "rgba(239,68,68,0.1)", color: "#ef4444",
+                            fontSize: 13, fontWeight: 800,
+                            opacity: !userPanelInput.trim() || sendingUserPanel ? 0.45 : 1,
+                            display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                          }}
+                        >
+                          <AlertTriangle size={14} /> Enviar aviso formal (conta +1)
+                        </button>
+                      )}
                     </div>
                     {(userPanelTarget.banned ?? false) && (
                       <div style={{ marginTop: 8, fontSize: 12, color: "#ef4444", fontWeight: 700, textAlign: "center" }}>
-                        Esta conta está banida — não é possível enviar mais mensagens.
+                        Utilizador banido — desbane primeiro para enviar avisos.
                       </div>
                     )}
                   </div>
@@ -762,7 +861,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                       {/* Warning badges */}
                       <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "nowrap" }}>
                         {u.role !== "admin" && (
-                          <WarningBadge count={u.warningCount ?? 0} banned={u.banned ?? false} />
+                          <WarningBadge count={u.warningCount ?? 0} banned={u.banned ?? false} bannedUntil={u.bannedUntil} />
                         )}
                         {u.role !== "admin" && (
                           <button

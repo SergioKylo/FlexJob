@@ -133,7 +133,27 @@ webApp.MapPost("/api/auth/login", async (HttpContext context, LoginRequest reque
 
     if (user.ContainsKey("banned") && user["banned"] != null && user["banned"] != DBNull.Value && Convert.ToInt32(user["banned"]) == 1)
     {
-        return Results.Json(new { message = "A tua conta foi suspensa após 3 avisos da administração." }, statusCode: 403);
+        var bannedUntilRaw = user.ContainsKey("banned_until") ? user["banned_until"]?.ToString() : null;
+        if (!string.IsNullOrEmpty(bannedUntilRaw) &&
+            DateTime.TryParse(bannedUntilRaw, null, System.Globalization.DateTimeStyles.RoundtripKind, out var bannedUntil))
+        {
+            if (DateTime.UtcNow >= bannedUntil)
+            {
+                // Ban expired — lift it and reset the warning counter
+                Database.ExecuteNonQuery(
+                    "UPDATE users SET banned = 0, banned_until = NULL, warning_count = 0 WHERE id = @id",
+                    new() { { "@id", Convert.ToInt32(user["id"]) } });
+            }
+            else
+            {
+                var daysLeft = (int)Math.Ceiling((bannedUntil - DateTime.UtcNow).TotalDays);
+                return Results.Json(new { message = $"A tua conta está suspensa. Poderás voltar a entrar em {daysLeft} dia(s), a {bannedUntil:dd/MM/yyyy}." }, statusCode: 403);
+            }
+        }
+        else
+        {
+            return Results.Json(new { message = "A tua conta foi suspensa após 3 avisos da administração." }, statusCode: 403);
+        }
     }
 
     // Sign in the user using Cookie authentication
@@ -1413,7 +1433,7 @@ webApp.MapGet("/api/admin/users", (HttpContext context) =>
     if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
 
     var rows = Database.ExecuteQuery(
-        "SELECT id, name, email, role, avatar, bio, rating, wallet_balance, created_at, warning_count, banned FROM users ORDER BY created_at DESC");
+        "SELECT id, name, email, role, avatar, bio, rating, wallet_balance, created_at, warning_count, banned, banned_until FROM users ORDER BY created_at DESC");
 
     return Results.Ok(rows.Select(u => new {
         id            = Convert.ToInt32(u["id"]),
@@ -1427,6 +1447,7 @@ webApp.MapGet("/api/admin/users", (HttpContext context) =>
         createdAt     = u["created_at"]?.ToString(),
         warningCount  = u["warning_count"] != null && u["warning_count"] != DBNull.Value ? Convert.ToInt32(u["warning_count"]) : 0,
         banned        = u["banned"] != null && u["banned"] != DBNull.Value && Convert.ToInt32(u["banned"]) == 1,
+        bannedUntil   = u["banned_until"]?.ToString(),
     }));
 });
 
@@ -1692,6 +1713,14 @@ webApp.MapPost("/api/admin/send-message", (HttpContext context, AdminSendMsgRequ
     if (string.IsNullOrWhiteSpace(request.Content))
         return Results.BadRequest(new { message = "Conteúdo vazio." });
 
+    if (request.IsWarning)
+    {
+        var target = Database.ExecuteQuery("SELECT banned FROM users WHERE id = @id", new() { { "@id", request.ToUserId } });
+        if (target.Count == 0) return Results.NotFound(new { message = "Utilizador não encontrado." });
+        if (target[0]["banned"] != null && target[0]["banned"] != DBNull.Value && Convert.ToInt32(target[0]["banned"]) == 1)
+            return Results.BadRequest(new { message = "O utilizador já está banido — não é possível dar mais avisos." });
+    }
+
     var msgType = request.IsWarning ? "admin_warning" : "text";
     Database.ExecuteNonQuery(
         @"INSERT INTO messages (from_user_id, to_user_id, content, message_type, created_at)
@@ -1707,9 +1736,10 @@ webApp.MapPost("/api/admin/send-message", (HttpContext context, AdminSendMsgRequ
 
     int warningCount = 0;
     bool banned = false;
+    string? bannedUntilOut = null;
     if (request.IsWarning)
     {
-        // 3 warnings = banned account
+        // 3 warnings = 30-day ban
         Database.ExecuteNonQuery(
             "UPDATE users SET warning_count = warning_count + 1 WHERE id = @id",
             new() { { "@id", request.ToUserId } });
@@ -1717,12 +1747,53 @@ webApp.MapPost("/api/admin/send-message", (HttpContext context, AdminSendMsgRequ
         warningCount = rows.Count > 0 ? Convert.ToInt32(rows[0]["warning_count"]) : 0;
         if (warningCount >= 3)
         {
-            Database.ExecuteNonQuery("UPDATE users SET banned = 1 WHERE id = @id", new() { { "@id", request.ToUserId } });
+            var until = DateTime.UtcNow.AddDays(30);
+            Database.ExecuteNonQuery(
+                "UPDATE users SET banned = 1, banned_until = @until WHERE id = @id",
+                new() { { "@until", until.ToString("o") }, { "@id", request.ToUserId } });
             banned = true;
+            bannedUntilOut = until.ToString("o");
         }
     }
 
-    return Results.Ok(new { message = request.IsWarning ? "Aviso enviado com sucesso." : "Mensagem enviada.", warningCount, banned });
+    return Results.Ok(new { message = request.IsWarning ? "Aviso enviado com sucesso." : "Mensagem enviada.", warningCount, banned, bannedUntil = bannedUntilOut });
+});
+
+// --- Admin: moderation actions (remove a warning / lift a ban) ---
+webApp.MapPost("/api/admin/users/moderate", (HttpContext context, AdminModerateRequest request) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var rows = Database.ExecuteQuery("SELECT warning_count, banned FROM users WHERE id = @id", new() { { "@id", request.UserId } });
+    if (rows.Count == 0) return Results.NotFound(new { message = "Utilizador não encontrado." });
+    int count = rows[0]["warning_count"] != null && rows[0]["warning_count"] != DBNull.Value ? Convert.ToInt32(rows[0]["warning_count"]) : 0;
+    bool isBanned = rows[0]["banned"] != null && rows[0]["banned"] != DBNull.Value && Convert.ToInt32(rows[0]["banned"]) == 1;
+
+    if (request.Action == "removeWarning")
+    {
+        if (count <= 0) return Results.BadRequest(new { message = "O utilizador não tem avisos." });
+        count -= 1;
+        // Dropping below 3 warnings lifts the ban
+        bool liftBan = isBanned && count < 3;
+        Database.ExecuteNonQuery(
+            liftBan
+                ? "UPDATE users SET warning_count = @c, banned = 0, banned_until = NULL WHERE id = @id"
+                : "UPDATE users SET warning_count = @c WHERE id = @id",
+            new() { { "@c", count }, { "@id", request.UserId } });
+        return Results.Ok(new { message = liftBan ? "Aviso removido — ban levantado." : "Aviso removido.", warningCount = count, banned = isBanned && !liftBan });
+    }
+
+    if (request.Action == "unban")
+    {
+        if (!isBanned) return Results.BadRequest(new { message = "O utilizador não está banido." });
+        count = Math.Min(count, 2); // leaves one strike before a new ban
+        Database.ExecuteNonQuery(
+            "UPDATE users SET banned = 0, banned_until = NULL, warning_count = @c WHERE id = @id",
+            new() { { "@c", count }, { "@id", request.UserId } });
+        return Results.Ok(new { message = "Utilizador desbanido.", warningCount = count, banned = false });
+    }
+
+    return Results.BadRequest(new { message = "Ação inválida." });
 });
 
 // --- Wallet Endpoint ---
@@ -1791,6 +1862,7 @@ public record UpdateJobRequest(int JobId, string Title, string Description, doub
 public record WorkerReviewRequest(int JobId, double Rating, string? Comment = null);
 public record ReportChatRequest(int ReportedUserId, int? JobId, string? Reason);
 public record AdminSendMsgRequest(int ToUserId, string Content, bool IsWarning = true);
+public record AdminModerateRequest(int UserId, string Action);
 public record ProposeJobRequest(int WorkerId, int? ExistingJobId, string? Title, string? Description, double Pay, string? Duration, string? WorkDate, string? Address);
 public record RespondProposalRequest(int JobId, bool Accept);
 

@@ -162,9 +162,10 @@ public static class Database
         try { ExecuteNonQuery("ALTER TABLE availabilities ADD COLUMN category TEXT NOT NULL DEFAULT 'outros'"); } catch { }
         // Comma-separated weekdays the worker is available (e.g. "mon,tue,sat"); empty = every day
         try { ExecuteNonQuery("ALTER TABLE availabilities ADD COLUMN days TEXT NOT NULL DEFAULT ''"); } catch { }
-        // Admin moderation: 3 warnings = banned account
+        // Admin moderation: 3 warnings = 30-day ban
         try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN banned_until TEXT"); } catch { }
         // Note: SQLite does not support MODIFY COLUMN — skip that migration
 
         // Replace old people-photo avatars (pravatar) with neutral generated ones
