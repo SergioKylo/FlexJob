@@ -9,6 +9,28 @@ O projeto inclui:
 
 O objetivo é ligar empresas/particulares que precisam de serviços com trabalhadores flexíveis disponíveis.
 
+## Funcionalidades
+
+- **Três tipos de conta:** trabalhador, empregador e administrador.
+- **Mapa interativo** (Leaflet + OpenStreetMap) com as vagas e os trabalhadores próximos.
+- **Disponibilidade do trabalhador:** região, tarifa horária, raio de ação, horário, categoria e dias da semana disponíveis.
+- **Vagas e propostas:** o empregador publica vagas ou propõe um trabalho diretamente a um trabalhador; o trabalhador aceita ou recusa.
+- **Pagamentos em garantia (escrow):** o pagamento é descontado da carteira do empregador, fica retido, e é libertado para o trabalhador quando o trabalho é confirmado. Inclui gorjetas e carteira digital com histórico.
+- **Chat** entre as partes, com avaliações (estrelas) no fim do trabalho e perfis com as avaliações recebidas.
+- **Notificações:** sino no topo com contagem de não lidas + avisos (toasts) no canto superior direito.
+- **Painel de administração:** estatísticas, gestão de utilizadores e vagas, leitura de conversas e moderação — sistema de avisos em que **3 avisos = suspensão de 30 dias** (o admin pode remover avisos ou desbanir).
+- **Internacionalização** (Português / Inglês) e **tema claro/escuro**.
+
+## Contas de demonstração
+
+Todas usam a palavra-passe `123456`:
+
+| Tipo | Email |
+|------|-------|
+| Trabalhador | `ines@email.com`, `miguel@email.com`, `sara@email.com`, `beatriz@email.com` |
+| Empregador | `cafeaurora@email.com`, `lxeventos@email.com`, `nortelog@email.com` |
+| Administrador | `admin@flexjob.com` |
+
 ## Estrutura do repositório
 
 - `frontend/` - aplicação React + TypeScript
