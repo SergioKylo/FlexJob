@@ -5,7 +5,8 @@ using Microsoft.Data.Sqlite;
 public static class Database
 {
     private static readonly string DbPath = Environment.GetEnvironmentVariable("DB_PATH") ?? "flexjob.db";
-    private static string ConnectionString => $"Data Source={DbPath}";
+    // Foreign Keys=True enables PRAGMA foreign_keys on every connection (it is per-connection in SQLite)
+    private static string ConnectionString => $"Data Source={DbPath};Foreign Keys=True";
 
     private static string Hash(string password)
     {
@@ -159,7 +160,19 @@ public static class Database
         try { ExecuteNonQuery("ALTER TABLE jobs ADD COLUMN work_date TEXT NOT NULL DEFAULT ''"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE messages ADD COLUMN message_type TEXT NOT NULL DEFAULT 'text'"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE availabilities ADD COLUMN category TEXT NOT NULL DEFAULT 'outros'"); } catch { }
+        // Comma-separated weekdays the worker is available (e.g. "mon,tue,sat"); empty = every day
+        try { ExecuteNonQuery("ALTER TABLE availabilities ADD COLUMN days TEXT NOT NULL DEFAULT ''"); } catch { }
+        // Admin moderation: 3 warnings = banned account
+        try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0"); } catch { }
         // Note: SQLite does not support MODIFY COLUMN — skip that migration
+
+        // Replace old people-photo avatars (pravatar) with neutral generated ones
+        try
+        {
+            ExecuteNonQuery("UPDATE users SET avatar = 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj' || id || '&radius=50' WHERE avatar LIKE '%pravatar%'");
+        }
+        catch (Exception ex) { Console.WriteLine($"Avatar migration skipped: {ex.Message}"); }
 
         // Seed mock data if database is empty
         try
@@ -186,7 +199,7 @@ public static class Database
             {
                 ExecuteNonQuery(
                     @"INSERT INTO users (name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
-                      VALUES ('Admin FlexJob', 'admin@flexjob.com', @hash, 'admin', 'https://i.pravatar.cc/150?img=8', 'Administrador da plataforma FlexJob.', 5.0, 0, 38.7169, -9.1399, @now)",
+                      VALUES ('Admin FlexJob', 'admin@flexjob.com', @hash, 'admin', 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj8&radius=50', 'Administrador da plataforma FlexJob.', 5.0, 0, 38.7169, -9.1399, @now)",
                     new() { { "@hash", pwhash }, { "@now", nowStr } });
                 Console.WriteLine("Admin user created.");
             }
@@ -210,19 +223,19 @@ public static class Database
             ExecuteNonQuery(@"
                 INSERT OR IGNORE INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at) VALUES
                 (15, 'Braga Eventos & Catering', 'bragaevents@email.com', @hash, 'employer',
-                    'https://i.pravatar.cc/150?img=11',
+                    'https://api.dicebear.com/7.x/thumbs/svg?seed=fj11&radius=50',
                     'Empresa local de eventos, casamentos e catering na região de Braga. Qualidade e tradição minhota.', 4.7, 350.0, 41.5454, -8.4265, @now),
                 (16, 'Tiago Bento', 'tiago@email.com', @hash, 'worker',
-                    'https://i.pravatar.cc/150?img=52',
+                    'https://api.dicebear.com/7.x/thumbs/svg?seed=fj52&radius=50',
                     'Estudante universitário em Braga. Disponível para eventos, catering e apoio geral. Energético e pontual.', 4.7, 0.0, 41.5510, -8.4310, @now),
                 (17, 'Joana Vieira', 'joana@email.com', @hash, 'worker',
-                    'https://i.pravatar.cc/150?img=39',
+                    'https://api.dicebear.com/7.x/thumbs/svg?seed=fj39&radius=50',
                     'Experiência em restauração e organização de eventos. Natural de Braga, conheço a cidade na perfeição.', 4.8, 20.0, 41.5400, -8.4200, @now),
                 (18, 'Escola de Música do Minho', 'escolaminho@email.com', @hash, 'employer',
-                    'https://i.pravatar.cc/150?img=57',
+                    'https://api.dicebear.com/7.x/thumbs/svg?seed=fj57&radius=50',
                     'Escola de música com 20 anos de história em Braga. Organizamos concertos, audições e eventos culturais.', 4.6, 200.0, 41.5520, -8.4180, @now),
                 (19, 'Quinta das Lameiras', 'quintalameiras@email.com', @hash, 'employer',
-                    'https://i.pravatar.cc/150?img=33',
+                    'https://api.dicebear.com/7.x/thumbs/svg?seed=fj33&radius=50',
                     'Espaço de eventos rurais em Braga. Casamentos, festas privadas e retiros corporativos com charme minhoto.', 4.9, 280.0, 41.5700, -8.3800, @now)",
                 new() { { "@hash", pwhash2 }, { "@now", now2 } });
 
@@ -293,7 +306,7 @@ public static class Database
         ExecuteNonQuery(@"
             INSERT INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
             VALUES (1, 'Admin FlexJob', 'admin@flexjob.com', @hash, 'admin',
-                    'https://i.pravatar.cc/150?img=8',
+                    'https://api.dicebear.com/7.x/thumbs/svg?seed=fj8&radius=50',
                     'Administrador da plataforma FlexJob.', 5.0, 0, 38.7169, -9.1399, @d14ago);",
             new() { { "@hash", pwhash }, { "@d14ago", d14ago } });
 
@@ -302,22 +315,22 @@ public static class Database
             INSERT INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
             VALUES
             (2, 'Café Aurora',                'cafeaurora@email.com', @hash, 'employer',
-                'https://i.pravatar.cc/150?img=26',
+                'https://api.dicebear.com/7.x/thumbs/svg?seed=fj26&radius=50',
                 'Café acolhedor no centro de Lisboa com pastelaria fina e brunch ao fim de semana.', 4.8, 320.0, 38.7109, -9.1424, @d14ago),
             (3, 'LX Eventos',                 'lxeventos@email.com',  @hash, 'employer',
-                'https://i.pravatar.cc/150?img=14',
+                'https://api.dicebear.com/7.x/thumbs/svg?seed=fj14&radius=50',
                 'Agência líder em organização de concertos, festivais e congressos em Portugal.', 4.7, 580.0, 41.1496, -8.6110, @d14ago),
             (4, 'Norte Logística',            'nortelog@email.com',   @hash, 'employer',
-                'https://i.pravatar.cc/150?img=33',
+                'https://api.dicebear.com/7.x/thumbs/svg?seed=fj33&radius=50',
                 'Distribuição expressa e fulfillment no norte de Portugal. ISO 9001 certificados.', 4.6, 210.0, 40.2056, -8.4196, @d14ago),
             (5, 'Restaurante Solar dos Mouros','solar@email.com',      @hash, 'employer',
-                'https://i.pravatar.cc/150?img=53',
+                'https://api.dicebear.com/7.x/thumbs/svg?seed=fj53&radius=50',
                 'Cozinha portuguesa tradicional com vista para o Castelo de São Jorge. Desde 1987.', 4.9, 440.0, 38.7080, -9.1320, @d7ago),
             (6, 'Hotel Baia Cascais',          'hotelbaia@email.com',  @hash, 'employer',
-                'https://i.pravatar.cc/150?img=68',
+                'https://api.dicebear.com/7.x/thumbs/svg?seed=fj68&radius=50',
                 'Hotel boutique 4 estrelas na marina de Cascais. Atendimento personalizado.', 4.8, 190.0, 38.6979, -9.4215, @d7ago),
             (15,'Braga Eventos & Catering',    'bragaevents@email.com',@hash, 'employer',
-                'https://i.pravatar.cc/150?img=11',
+                'https://api.dicebear.com/7.x/thumbs/svg?seed=fj11&radius=50',
                 'Empresa local de eventos, casamentos e catering na região de Braga. Qualidade e tradição minhota.', 4.7, 350.0, 41.5454, -8.4265, @d3ago);",
             new() { { "@hash", pwhash }, { "@d14ago", d14ago }, { "@d7ago", d7ago }, { "@d3ago", d3ago } });
 
@@ -326,34 +339,34 @@ public static class Database
             INSERT INTO users (id, name, email, password_hash, role, avatar, bio, rating, wallet_balance, location_lat, location_lng, created_at)
             VALUES
             (7,  'Inês Costa',     'ines@email.com',    @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=16',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj16&radius=50',
                  'Experiência em cafés, bar, receção de hotéis e check-in de eventos. Inglês fluente.', 4.9, 174.0, 38.7240, -9.1510, @d14ago),
             (8,  'Miguel Rocha',   'miguel@email.com',  @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=12',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj12&radius=50',
                  'Disponível para logística, armazéns, cargas leves e condução local. Carta B.', 4.8,  76.0, 41.1633, -8.6177, @d14ago),
             (9,  'Sara Martins',   'sara@email.com',    @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=20',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj20&radius=50',
                  'Especialista em limpezas residenciais e hoteleiras. Rápida, discreta e rigorosa.', 4.7,  36.0, 40.1989, -8.4043, @d7ago),
             (10, 'Beatriz Santos', 'beatriz@email.com', @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=44',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj44&radius=50',
                  'Estudante de hotelaria. Inglês, Francês e Espanhol. Foco em atendimento ao cliente.', 4.8,   0.0, 38.7355, -9.1432, @d7ago),
             (11, 'Carlos Silva',   'carlos@email.com',  @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=22',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj22&radius=50',
                  'Estafeta urbano e motorista. Bicicleta e trotinete elétrica. Conheço Lisboa muito bem.', 4.6,  44.0, 38.7200, -9.1380, @d3ago),
             (12, 'Ana Sousa',      'ana@email.com',     @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=47',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj47&radius=50',
                  'Feiras, mercados e eventos ao ar livre. Energia e simpatia garantidas!', 4.7,  40.0, 38.7150, -9.1290, @d3ago),
             (13, 'Rui Fernandes',  'rui@email.com',     @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=57',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj57&radius=50',
                  'Técnico de som freelance. Monto e opero sistemas PA para concertos e eventos.', 4.9,   0.0, 41.1550, -8.6050, @d1ago),
             (14, 'Marta Pereira',  'marta@email.com',   @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=64',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj64&radius=50',
                  'Cozinheira de linha com 6 anos de experiência em restaurantes e catering.', 4.8,  60.0, 38.7090, -9.1350, @d1ago),
             (16, 'Tiago Bento',    'tiago@email.com',   @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=52',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj52&radius=50',
                  'Estudante universitário em Braga. Disponível para eventos, catering e apoio geral. Energético e pontual.', 4.7,   0.0, 41.5510, -8.4310, @d3ago),
             (17, 'Joana Vieira',   'joana@email.com',   @hash, 'worker',
-                 'https://i.pravatar.cc/150?img=39',
+                 'https://api.dicebear.com/7.x/thumbs/svg?seed=fj39&radius=50',
                  'Experiência em restauração e organização de eventos. Natural de Braga, conheço a cidade na perfeição.', 4.8,  20.0, 41.5400, -8.4200, @d3ago);",
             new() { { "@hash", pwhash }, { "@d14ago", d14ago }, { "@d7ago", d7ago }, { "@d3ago", d3ago }, { "@d1ago", d1ago } });
 
@@ -576,12 +589,54 @@ public static class Database
         return results;
     }
 
-    public static long GetLastInsertRowId()
+    // last_insert_rowid() is per-connection, so the INSERT and the SELECT must share one
+    public static long ExecuteInsertReturningId(string sql, Dictionary<string, object> parameters = null)
     {
         using var connection = new SqliteConnection(ConnectionString);
         connection.Open();
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT last_insert_rowid();";
+        command.CommandText = sql + "; SELECT last_insert_rowid();";
+        if (parameters != null)
+        {
+            foreach (var param in parameters)
+            {
+                command.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
+            }
+        }
         return Convert.ToInt64(command.ExecuteScalar());
+    }
+
+    // Runs the body inside a single transaction; any exception rolls everything back.
+    // The body receives an exec(sql, parameters) delegate returning affected row count.
+    public static T WithTransaction<T>(Func<Func<string, Dictionary<string, object>, int>, T> body)
+    {
+        using var connection = new SqliteConnection(ConnectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        int Exec(string sql, Dictionary<string, object> parameters)
+        {
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = sql;
+            if (parameters != null)
+            {
+                foreach (var param in parameters)
+                {
+                    command.Parameters.AddWithValue(param.Key, param.Value ?? DBNull.Value);
+                }
+            }
+            return command.ExecuteNonQuery();
+        }
+        try
+        {
+            var result = body(Exec);
+            transaction.Commit();
+            return result;
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
     }
 }

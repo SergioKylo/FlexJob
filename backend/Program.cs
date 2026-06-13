@@ -97,7 +97,7 @@ webApp.MapPost("/api/auth/register", async (HttpContext context, RegisterRequest
                 Database.ExecuteNonQuery(
                     @"INSERT INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active)
                       VALUES (@workerId, @lat, @lng, 10.0, '09:00', '18:00', @hourlyRate, 1)
-                      ON DUPLICATE KEY UPDATE hourly_rate = @hourlyRate",
+                      ON CONFLICT(worker_id) DO UPDATE SET hourly_rate = excluded.hourly_rate",
                     new() { { "@workerId", newUserId }, { "@lat", request.Lat }, { "@lng", request.Lng }, { "@hourlyRate", request.HourlyRate } });
             }
         }
@@ -129,6 +129,11 @@ webApp.MapPost("/api/auth/login", async (HttpContext context, LoginRequest reque
     if (!PasswordHasher.Verify(request.Password, storedHash))
     {
         return Results.BadRequest(new { message = "Email ou palavra-passe incorretos." });
+    }
+
+    if (user.ContainsKey("banned") && user["banned"] != null && user["banned"] != DBNull.Value && Convert.ToInt32(user["banned"]) == 1)
+    {
+        return Results.Json(new { message = "A tua conta foi suspensa após 3 avisos da administração." }, statusCode: 403);
     }
 
     // Sign in the user using Cookie authentication
@@ -177,7 +182,7 @@ webApp.MapGet("/api/auth/me", async (HttpContext context) =>
     var userId = context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
     if (userId == null) return Results.Unauthorized();
 
-    var users = Database.ExecuteQuery("SELECT id, name, email, role, avatar, bio, rating, location_lat, location_lng FROM users WHERE id = @id", new() { { "@id", userId } });
+    var users = Database.ExecuteQuery("SELECT id, name, email, role, avatar, bio, rating, location_lat, location_lng, warning_count, banned FROM users WHERE id = @id", new() { { "@id", userId } });
     if (users.Count == 0) return Results.NotFound();
 
     var user = users[0];
@@ -191,7 +196,9 @@ webApp.MapGet("/api/auth/me", async (HttpContext context) =>
         bio = user["bio"]?.ToString(),
         rating = Convert.ToDouble(user["rating"]),
         lat = user["location_lat"] != null && user["location_lat"] != DBNull.Value ? Convert.ToDouble(user["location_lat"]) : (double?)null,
-        lng = user["location_lng"] != null && user["location_lng"] != DBNull.Value ? Convert.ToDouble(user["location_lng"]) : (double?)null
+        lng = user["location_lng"] != null && user["location_lng"] != DBNull.Value ? Convert.ToDouble(user["location_lng"]) : (double?)null,
+        warningCount = user["warning_count"] != null && user["warning_count"] != DBNull.Value ? Convert.ToInt32(user["warning_count"]) : 0,
+        banned = user["banned"] != null && user["banned"] != DBNull.Value && Convert.ToInt32(user["banned"]) == 1
     });
 });
 
@@ -635,7 +642,8 @@ webApp.MapGet("/api/workers", (HttpContext context, double? lat, double? lng, do
             endTime = w["end_time"]?.ToString(),
             hourlyRate = Convert.ToDouble(w["hourly_rate"]),
             isActive = Convert.ToInt32(w["is_active"]) == 1,
-            category = w.ContainsKey("category") ? w["category"]?.ToString() ?? "outros" : "outros"
+            category = w.ContainsKey("category") ? w["category"]?.ToString() ?? "outros" : "outros",
+            days = w.ContainsKey("days") ? w["days"]?.ToString() ?? "" : ""
         });
     }
 
@@ -653,15 +661,15 @@ webApp.MapPost("/api/workers/availability", (HttpContext context, AvailabilityRe
         return Results.Json(new { message = "Apenas trabalhadores podem definir disponibilidade." }, statusCode: 403);
     }
 
-    // Insert or replace availability in MySQL using ON DUPLICATE KEY UPDATE
+    // Upsert availability (SQLite ON CONFLICT)
     Database.ExecuteNonQuery(
-        @"INSERT INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active, category)
-          VALUES (@workerId, @lat, @lng, @radius, @startTime, @endTime, @hourlyRate, @isActive, @category)
+        @"INSERT INTO availabilities (worker_id, lat, lng, radius, start_time, end_time, hourly_rate, is_active, category, days)
+          VALUES (@workerId, @lat, @lng, @radius, @startTime, @endTime, @hourlyRate, @isActive, @category, @days)
           ON CONFLICT(worker_id) DO UPDATE SET
             lat = excluded.lat, lng = excluded.lng, radius = excluded.radius,
             start_time = excluded.start_time, end_time = excluded.end_time,
             hourly_rate = excluded.hourly_rate, is_active = excluded.is_active,
-            category = excluded.category",
+            category = excluded.category, days = excluded.days",
         new()
         {
             { "@workerId", userId },
@@ -672,7 +680,8 @@ webApp.MapPost("/api/workers/availability", (HttpContext context, AvailabilityRe
             { "@endTime", request.EndTime ?? "" },
             { "@hourlyRate", request.HourlyRate },
             { "@isActive", request.IsActive ? 1 : 0 },
-            { "@category", request.Category ?? "outros" }
+            { "@category", request.Category ?? "outros" },
+            { "@days", request.Days ?? "" }
         });
 
     // Also update the user's main location so the map reflects the new region
@@ -681,6 +690,30 @@ webApp.MapPost("/api/workers/availability", (HttpContext context, AvailabilityRe
         new() { { "@lat", request.Lat }, { "@lng", request.Lng }, { "@userId", userId } });
 
     return Results.Ok(new { message = "Disponibilidade atualizada!" });
+});
+
+// Current worker's saved availability (used to pre-fill the availability form)
+webApp.MapGet("/api/workers/availability/me", (HttpContext context) =>
+{
+    if (context.User.Identity?.IsAuthenticated != true) return Results.Unauthorized();
+    var userId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+
+    var rows = Database.ExecuteQuery("SELECT * FROM availabilities WHERE worker_id = @id", new() { { "@id", userId } });
+    if (rows.Count == 0) return Results.NotFound(new { message = "Sem disponibilidade definida." });
+    var a = rows[0];
+
+    return Results.Ok(new
+    {
+        lat = Convert.ToDouble(a["lat"]),
+        lng = Convert.ToDouble(a["lng"]),
+        radius = Convert.ToDouble(a["radius"]),
+        startTime = a["start_time"]?.ToString(),
+        endTime = a["end_time"]?.ToString(),
+        hourlyRate = Convert.ToDouble(a["hourly_rate"]),
+        isActive = Convert.ToInt32(a["is_active"]) == 1,
+        category = a.ContainsKey("category") ? a["category"]?.ToString() ?? "outros" : "outros",
+        days = a.ContainsKey("days") ? a["days"]?.ToString() ?? "" : ""
+    });
 });
 
 // --- Messages Endpoints ---
@@ -699,6 +732,7 @@ webApp.MapGet("/api/messages/inbox", (HttpContext context) =>
               u.avatar as partner_avatar,
               u.role as partner_role,
               m.content as last_message,
+              m.from_user_id as last_from_user_id,
               m.created_at as last_message_time
           FROM messages m
           LEFT JOIN jobs j ON m.job_id = j.id
@@ -724,6 +758,7 @@ webApp.MapGet("/api/messages/inbox", (HttpContext context) =>
             partnerAvatar = c["partner_avatar"]?.ToString(),
             partnerRole = c["partner_role"]?.ToString(),
             lastMessage = c["last_message"]?.ToString(),
+            lastFromUserId = Convert.ToInt32(c["last_from_user_id"]),
             lastMessageTime = c["last_message_time"]?.ToString()
         });
     }
@@ -738,10 +773,11 @@ webApp.MapGet("/api/messages", (HttpContext context, int partnerId, int? jobId) 
 
     // Get messages between the logged-in user and the partner, optionally filtered by jobId
     string query = @"
-        SELECT m.*, u_from.name as from_name, u_to.name as to_name
+        SELECT m.*, u_from.name as from_name, u_to.name as to_name, j.status as job_status
         FROM messages m
         JOIN users u_from ON m.from_user_id = u_from.id
         JOIN users u_to ON m.to_user_id = u_to.id
+        LEFT JOIN jobs j ON m.job_id = j.id
         WHERE ((m.from_user_id = @userId AND m.to_user_id = @partnerId)
            OR (m.from_user_id = @partnerId AND m.to_user_id = @userId))";
 
@@ -773,6 +809,7 @@ webApp.MapGet("/api/messages", (HttpContext context, int partnerId, int? jobId) 
             toName = m["to_name"]?.ToString(),
             content = m["content"]?.ToString(),
             messageType = m.ContainsKey("message_type") ? m["message_type"]?.ToString() ?? "text" : "text",
+            jobStatus = m["job_status"]?.ToString(),
             createdAt = m["created_at"]?.ToString()
         });
     }
@@ -823,6 +860,12 @@ webApp.MapGet("/api/jobs/detail", (HttpContext context, int jobId) =>
     if (jobs.Count == 0) return Results.NotFound(new { message = "Trabalho não encontrado." });
     var job = jobs[0];
 
+    // Lets the frontend hide the "rate" button when this user already reviewed the job
+    var meId = Convert.ToInt32(context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value);
+    var reviewed = Database.ExecuteQuery(
+        "SELECT id FROM reviews WHERE job_id = @jobId AND from_user_id = @me",
+        new() { { "@jobId", jobId }, { "@me", meId } });
+
     return Results.Ok(new
     {
         id = Convert.ToInt32(job["id"]),
@@ -835,6 +878,7 @@ webApp.MapGet("/api/jobs/detail", (HttpContext context, int jobId) =>
         employerName = job["employer_name"]?.ToString(),
         workerId = job["worker_id"] != null && job["worker_id"] != DBNull.Value ? Convert.ToInt32(job["worker_id"]) : (int?)null,
         workerName = job["worker_name"]?.ToString(),
+        reviewedByMe = reviewed.Count > 0,
     });
 });
 
@@ -868,9 +912,29 @@ webApp.MapPost("/api/payments/escrow", (HttpContext context, EscrowRequest reque
     var hours = request.Hours > 0 ? request.Hours : 1.0;
     var amount = hours * hourlyRate;
 
-    Database.ExecuteNonQuery(
-        "UPDATE jobs SET payment_status = 'escrowed', payment_amount = @amount WHERE id = @jobId",
-        new() { { "@jobId", request.JobId }, { "@amount", amount } });
+    // Debit employer and mark job escrowed atomically; the WHERE guards block
+    // double-escrow (e.g. double-click) and overdraft even under concurrency
+    try
+    {
+        Database.WithTransaction<object>(exec =>
+        {
+            var claimed = exec(
+                "UPDATE jobs SET payment_status = 'escrowed', payment_amount = @amount WHERE id = @jobId AND payment_status = 'none'",
+                new() { { "@jobId", request.JobId }, { "@amount", amount } });
+            if (claimed == 0)
+                throw new InvalidOperationException("Pagamento já foi efetuado para esta tarefa.");
+            var debited = exec(
+                "UPDATE users SET wallet_balance = wallet_balance - @amount WHERE id = @userId AND wallet_balance >= @amount",
+                new() { { "@amount", amount }, { "@userId", userId } });
+            if (debited == 0)
+                throw new InvalidOperationException("Saldo insuficiente na carteira para depositar a garantia.");
+            return null;
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
 
     var dateInfo = !string.IsNullOrWhiteSpace(request.WorkDate) ? $" para {request.WorkDate}" : "";
     var notesInfo = !string.IsNullOrWhiteSpace(request.Notes) ? $"\n📝 {request.Notes}" : "";
@@ -918,13 +982,26 @@ webApp.MapPost("/api/payments/release", (HttpContext context, ReleasePaymentRequ
     var paymentAmountRaw = job.ContainsKey("payment_amount") && job["payment_amount"] != null && job["payment_amount"] != DBNull.Value ? Convert.ToDouble(job["payment_amount"]) : 0;
     var pay = paymentAmountRaw > 0 ? paymentAmountRaw : Convert.ToDouble(job["pay"]);
 
-    Database.ExecuteNonQuery(
-        "UPDATE jobs SET status = 'completed', payment_status = 'released' WHERE id = @jobId",
-        new() { { "@jobId", request.JobId } });
-
-    Database.ExecuteNonQuery(
-        "UPDATE users SET wallet_balance = wallet_balance + @amount WHERE id = @workerId",
-        new() { { "@amount", pay }, { "@workerId", workerId } });
+    // Release and credit atomically; the guard blocks a double release
+    try
+    {
+        Database.WithTransaction<object>(exec =>
+        {
+            var released = exec(
+                "UPDATE jobs SET status = 'completed', payment_status = 'released' WHERE id = @jobId AND payment_status = 'escrowed'",
+                new() { { "@jobId", request.JobId } });
+            if (released == 0)
+                throw new InvalidOperationException("O pagamento já foi libertado ou não está em garantia.");
+            exec(
+                "UPDATE users SET wallet_balance = wallet_balance + @amount WHERE id = @workerId",
+                new() { { "@amount", pay }, { "@workerId", workerId } });
+            return null;
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
 
     if (request.Rating > 0)
     {
@@ -1048,12 +1125,30 @@ webApp.MapPost("/api/payments/tip", (HttpContext context, TipRequest request) =>
         return Results.BadRequest(new { message = "Só pode dar gorjeta depois do pagamento ser confirmado." });
 
     var workerId = Convert.ToInt32(job["worker_id"]);
-    Database.ExecuteNonQuery("UPDATE users SET wallet_balance = wallet_balance + @amount WHERE id = @workerId",
-        new() { { "@amount", request.Amount }, { "@workerId", workerId } });
+    // Move the tip from the employer's wallet to the worker's, atomically
+    try
+    {
+        Database.WithTransaction<object>(exec =>
+        {
+            var debited = exec(
+                "UPDATE users SET wallet_balance = wallet_balance - @amount WHERE id = @userId AND wallet_balance >= @amount",
+                new() { { "@amount", request.Amount }, { "@userId", userId } });
+            if (debited == 0)
+                throw new InvalidOperationException("Saldo insuficiente na carteira para enviar a gorjeta.");
+            exec(
+                "UPDATE users SET wallet_balance = wallet_balance + @amount WHERE id = @workerId",
+                new() { { "@amount", request.Amount }, { "@workerId", workerId } });
+            return null;
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
 
     Database.ExecuteNonQuery(
         @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
-          VALUES (@from, @to, @jobId, @content, 'payment_released', @createdAt)",
+          VALUES (@from, @to, @jobId, @content, 'payment_tip', @createdAt)",
         new()
         {
             { "@from", userId },
@@ -1130,6 +1225,10 @@ webApp.MapPost("/api/jobs/propose", (HttpContext context, ProposeJobRequest requ
     if (role != "employer")
         return Results.Json(new { message = "Apenas empreendedores podem propor vagas." }, statusCode: 403);
 
+    var workerRows = Database.ExecuteQuery("SELECT role FROM users WHERE id = @id", new() { { "@id", request.WorkerId } });
+    if (workerRows.Count == 0 || workerRows[0]["role"]?.ToString() != "worker")
+        return Results.BadRequest(new { message = "Trabalhador inválido." });
+
     int jobId;
     string jobTitle, jobDescription, jobAddress, jobDuration, jobWorkDate;
     double jobPay;
@@ -1170,7 +1269,7 @@ webApp.MapPost("/api/jobs/propose", (HttpContext context, ProposeJobRequest requ
         jobPay         = request.Pay;
         jobDuration    = request.Duration ?? "A definir";
         jobWorkDate    = request.WorkDate ?? "";
-        Database.ExecuteNonQuery(
+        jobId = (int)Database.ExecuteInsertReturningId(
             @"INSERT INTO jobs (employer_id, worker_id, title, description, category, lat, lng, address, pay, pay_type, duration, status, work_date, created_at)
               VALUES (@emp, @w, @title, @desc, 'outros', @lat, @lng, @addr, @pay, 'hourly', @dur, 'proposed', @wd, @now)",
             new() {
@@ -1180,8 +1279,6 @@ webApp.MapPost("/api/jobs/propose", (HttpContext context, ProposeJobRequest requ
                 { "@pay", jobPay }, { "@dur", jobDuration },
                 { "@wd", jobWorkDate }, { "@now", now }
             });
-        var idRow = Database.ExecuteQuery("SELECT last_insert_rowid() AS id");
-        jobId = Convert.ToInt32(idRow[0]["id"]);
     }
 
     // Send job_proposal message
@@ -1316,7 +1413,7 @@ webApp.MapGet("/api/admin/users", (HttpContext context) =>
     if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
 
     var rows = Database.ExecuteQuery(
-        "SELECT id, name, email, role, avatar, bio, rating, wallet_balance, created_at FROM users ORDER BY created_at DESC");
+        "SELECT id, name, email, role, avatar, bio, rating, wallet_balance, created_at, warning_count, banned FROM users ORDER BY created_at DESC");
 
     return Results.Ok(rows.Select(u => new {
         id            = Convert.ToInt32(u["id"]),
@@ -1328,6 +1425,8 @@ webApp.MapGet("/api/admin/users", (HttpContext context) =>
         rating        = u["rating"] != null ? Convert.ToDouble(u["rating"]) : 5.0,
         walletBalance = u["wallet_balance"] != null ? Convert.ToDouble(u["wallet_balance"]) : 0.0,
         createdAt     = u["created_at"]?.ToString(),
+        warningCount  = u["warning_count"] != null && u["warning_count"] != DBNull.Value ? Convert.ToInt32(u["warning_count"]) : 0,
+        banned        = u["banned"] != null && u["banned"] != DBNull.Value && Convert.ToInt32(u["banned"]) == 1,
     }));
 });
 
@@ -1482,51 +1581,51 @@ webApp.MapGet("/api/admin/conversations", (HttpContext context) =>
     if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
 
     // Full query with reports count
-    // ANY_VALUE() is needed for MySQL 8 ONLY_FULL_GROUP_BY mode on joined columns
+    // SQLite: two-arg MIN/MAX are scalar (replacing LEAST/GREATEST); aggregate MIN() replaces MySQL's ANY_VALUE()
     const string fullSql = @"
         SELECT
-            LEAST(m.from_user_id, m.to_user_id)    AS user1_id,
-            GREATEST(m.from_user_id, m.to_user_id) AS user2_id,
+            MIN(m.from_user_id, m.to_user_id)    AS user1_id,
+            MAX(m.from_user_id, m.to_user_id) AS user2_id,
             COALESCE(m.job_id, 0)                   AS job_id,
-            ANY_VALUE(u1.name)  AS user1_name,
-            ANY_VALUE(u2.name)  AS user2_name,
-            ANY_VALUE(j.title)  AS job_title,
+            MIN(u1.name)  AS user1_name,
+            MIN(u2.name)  AS user2_name,
+            MIN(j.title)  AS job_title,
             MAX(m.created_at)     AS last_message_at,
             COUNT(DISTINCT m.id)  AS message_count,
             COUNT(DISTINCT r.id)  AS report_count
         FROM messages m
-        JOIN  users u1 ON u1.id = LEAST(m.from_user_id, m.to_user_id)
-        JOIN  users u2 ON u2.id = GREATEST(m.from_user_id, m.to_user_id)
+        JOIN  users u1 ON u1.id = MIN(m.from_user_id, m.to_user_id)
+        JOIN  users u2 ON u2.id = MAX(m.from_user_id, m.to_user_id)
         LEFT JOIN jobs j ON j.id = m.job_id
         LEFT JOIN reports r ON
-            (r.reporter_id = LEAST(m.from_user_id, m.to_user_id)
-             OR r.reporter_id = GREATEST(m.from_user_id, m.to_user_id))
+            (r.reporter_id = MIN(m.from_user_id, m.to_user_id)
+             OR r.reporter_id = MAX(m.from_user_id, m.to_user_id))
             AND
-            (r.reported_user_id = LEAST(m.from_user_id, m.to_user_id)
-             OR r.reported_user_id = GREATEST(m.from_user_id, m.to_user_id))
-        GROUP BY LEAST(m.from_user_id, m.to_user_id),
-                 GREATEST(m.from_user_id, m.to_user_id),
+            (r.reported_user_id = MIN(m.from_user_id, m.to_user_id)
+             OR r.reported_user_id = MAX(m.from_user_id, m.to_user_id))
+        GROUP BY MIN(m.from_user_id, m.to_user_id),
+                 MAX(m.from_user_id, m.to_user_id),
                  COALESCE(m.job_id, 0)
         ORDER BY MAX(m.created_at) DESC";
 
     // Fallback query without reports (in case reports table doesn't exist yet)
     const string fallbackSql = @"
         SELECT
-            LEAST(m.from_user_id, m.to_user_id)    AS user1_id,
-            GREATEST(m.from_user_id, m.to_user_id) AS user2_id,
+            MIN(m.from_user_id, m.to_user_id)    AS user1_id,
+            MAX(m.from_user_id, m.to_user_id) AS user2_id,
             COALESCE(m.job_id, 0)                   AS job_id,
-            ANY_VALUE(u1.name)  AS user1_name,
-            ANY_VALUE(u2.name)  AS user2_name,
-            ANY_VALUE(j.title)  AS job_title,
+            MIN(u1.name)  AS user1_name,
+            MIN(u2.name)  AS user2_name,
+            MIN(j.title)  AS job_title,
             MAX(m.created_at)     AS last_message_at,
             COUNT(DISTINCT m.id)  AS message_count,
             0                     AS report_count
         FROM messages m
-        JOIN  users u1 ON u1.id = LEAST(m.from_user_id, m.to_user_id)
-        JOIN  users u2 ON u2.id = GREATEST(m.from_user_id, m.to_user_id)
+        JOIN  users u1 ON u1.id = MIN(m.from_user_id, m.to_user_id)
+        JOIN  users u2 ON u2.id = MAX(m.from_user_id, m.to_user_id)
         LEFT JOIN jobs j ON j.id = m.job_id
-        GROUP BY LEAST(m.from_user_id, m.to_user_id),
-                 GREATEST(m.from_user_id, m.to_user_id),
+        GROUP BY MIN(m.from_user_id, m.to_user_id),
+                 MAX(m.from_user_id, m.to_user_id),
                  COALESCE(m.job_id, 0)
         ORDER BY MAX(m.created_at) DESC";
 
@@ -1593,18 +1692,37 @@ webApp.MapPost("/api/admin/send-message", (HttpContext context, AdminSendMsgRequ
     if (string.IsNullOrWhiteSpace(request.Content))
         return Results.BadRequest(new { message = "Conteúdo vazio." });
 
+    var msgType = request.IsWarning ? "admin_warning" : "text";
     Database.ExecuteNonQuery(
         @"INSERT INTO messages (from_user_id, to_user_id, content, message_type, created_at)
-          VALUES (@from, @to, @content, 'admin_warning', @now)",
+          VALUES (@from, @to, @content, @type, @now)",
         new Dictionary<string, object>
         {
             { "@from", adminId },
             { "@to",   request.ToUserId },
             { "@content", request.Content },
+            { "@type", msgType },
             { "@now",  DateTime.UtcNow.ToString("o") },
         });
 
-    return Results.Ok(new { message = "Aviso enviado com sucesso." });
+    int warningCount = 0;
+    bool banned = false;
+    if (request.IsWarning)
+    {
+        // 3 warnings = banned account
+        Database.ExecuteNonQuery(
+            "UPDATE users SET warning_count = warning_count + 1 WHERE id = @id",
+            new() { { "@id", request.ToUserId } });
+        var rows = Database.ExecuteQuery("SELECT warning_count FROM users WHERE id = @id", new() { { "@id", request.ToUserId } });
+        warningCount = rows.Count > 0 ? Convert.ToInt32(rows[0]["warning_count"]) : 0;
+        if (warningCount >= 3)
+        {
+            Database.ExecuteNonQuery("UPDATE users SET banned = 1 WHERE id = @id", new() { { "@id", request.ToUserId } });
+            banned = true;
+        }
+    }
+
+    return Results.Ok(new { message = request.IsWarning ? "Aviso enviado com sucesso." : "Mensagem enviada.", warningCount, banned });
 });
 
 // --- Wallet Endpoint ---
@@ -1623,7 +1741,7 @@ webApp.MapGet("/api/wallet", (HttpContext context) =>
     if (role == "worker")
     {
         var escrowed = Database.ExecuteQuery(
-            "SELECT SUM(pay) as total FROM jobs WHERE worker_id = @id AND payment_status = 'escrowed'",
+            "SELECT SUM(payment_amount) as total FROM jobs WHERE worker_id = @id AND payment_status = 'escrowed'",
             new() { { "@id", userId } });
         escrow = escrowed.Count > 0 && escrowed[0]["total"] != null && escrowed[0]["total"] != DBNull.Value
             ? Convert.ToDouble(escrowed[0]["total"]) : 0;
@@ -1631,11 +1749,11 @@ webApp.MapGet("/api/wallet", (HttpContext context) =>
 
     // Transaction history
     string txQuery = role == "worker"
-        ? @"SELECT j.title, j.pay, j.payment_status, j.created_at, e.name as partner_name
+        ? @"SELECT j.title, CASE WHEN j.payment_amount > 0 THEN j.payment_amount ELSE j.pay END as pay, j.payment_status, j.created_at, e.name as partner_name
             FROM jobs j JOIN users e ON j.employer_id = e.id
             WHERE j.worker_id = @id AND j.payment_status IN ('escrowed','released')
             ORDER BY j.created_at DESC LIMIT 20"
-        : @"SELECT j.title, j.pay, j.payment_status, j.created_at, w.name as partner_name
+        : @"SELECT j.title, CASE WHEN j.payment_amount > 0 THEN j.payment_amount ELSE j.pay END as pay, j.payment_status, j.created_at, w.name as partner_name
             FROM jobs j LEFT JOIN users w ON j.worker_id = w.id
             WHERE j.employer_id = @id AND j.payment_status IN ('escrowed','released')
             ORDER BY j.created_at DESC LIMIT 20";
@@ -1661,7 +1779,7 @@ public record LoginRequest(string Email, string Password);
 public record JobPostRequest(string Title, string Description, string Category, double Lat, double Lng, string Address, double Pay, string PayType, string Duration, string Photo, string? WorkDate = null);
 public record ApplyRequest(int JobId);
 public record RespondRequest(int ApplicationId, bool Accept);
-public record AvailabilityRequest(double Lat, double Lng, double Radius, string StartTime, string EndTime, double HourlyRate, bool IsActive, string? Category = null);
+public record AvailabilityRequest(double Lat, double Lng, double Radius, string StartTime, string EndTime, double HourlyRate, bool IsActive, string? Category = null, string? Days = null);
 public record MessageRequest(int ToUserId, int? JobId, string Content);
 public record ProfileUpdateRequest(string Name, string Bio, string? Avatar = null);
 public record EscrowRequest(int JobId, double Hours = 1.0, string? WorkDate = null, string? Notes = null);
@@ -1672,7 +1790,7 @@ public record CloseJobRequest(int JobId);
 public record UpdateJobRequest(int JobId, string Title, string Description, double Pay, string Duration, string? WorkDate = null, string? Address = null);
 public record WorkerReviewRequest(int JobId, double Rating, string? Comment = null);
 public record ReportChatRequest(int ReportedUserId, int? JobId, string? Reason);
-public record AdminSendMsgRequest(int ToUserId, string Content);
+public record AdminSendMsgRequest(int ToUserId, string Content, bool IsWarning = true);
 public record ProposeJobRequest(int WorkerId, int? ExistingJobId, string? Title, string? Description, double Pay, string? Duration, string? WorkDate, string? Address);
 public record RespondProposalRequest(int JobId, bool Accept);
 

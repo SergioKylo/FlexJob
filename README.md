@@ -5,7 +5,7 @@ FlexJob é um projeto de marketplace de trabalho temporário em Portugal.
 O projeto inclui:
 - frontend em React + TypeScript + Vite
 - backend em ASP.NET Core (.NET 8)
-- base de dados MySQL (via Docker Compose)
+- base de dados SQLite (via Microsoft.Data.Sqlite)
 
 O objetivo é ligar empresas/particulares que precisam de serviços com trabalhadores flexíveis disponíveis.
 
@@ -13,7 +13,7 @@ O objetivo é ligar empresas/particulares que precisam de serviços com trabalha
 
 - `frontend/` - aplicação React + TypeScript
 - `backend/` - API ASP.NET Core e lógica de autenticação
-- `docker-compose.yml` - orquestração do frontend, backend e MySQL
+- `docker-compose.yml` - orquestração do frontend e backend (a base de dados SQLite fica num volume local em `./data/`)
 
 ## Pré-requisitos
 
@@ -39,7 +39,6 @@ docker compose up --build
 O Docker irá iniciar:
 - frontend em `http://localhost:5173`
 - backend em `http://localhost:8080`
-- MySQL em `localhost:3306`
 
 Para parar:
 
@@ -75,7 +74,7 @@ O backend ficará disponível em:
 http://localhost:8080
 ```
 
-> Se executar o backend localmente sem Docker, certifique-se de ter MySQL em execução e atualize a string de ligação no `CONNECTION_STRING` se necessário.
+> Se executar o backend localmente sem Docker, o ficheiro SQLite é criado automaticamente em `flexjob.db` na pasta `backend/`. Pode alterar o caminho com a variável de ambiente `DB_PATH`.
 
 ## Branch principal: `main` vs `master`
 
@@ -115,8 +114,8 @@ git push origin --delete master
 ## Observações importantes
 
 - O frontend está configurado com Leaflet e OpenStreetMap.
-- O backend usa cookies para autenticação e uma base de dados MySQL.
-- O `docker-compose.yml` inclui frontend, backend e MySQL.
+- O backend usa cookies para autenticação e uma base de dados SQLite.
+- O `docker-compose.yml` inclui frontend e backend (SQLite não requer serviço separado).
 - O projeto é uma demo e precisa de melhorias de segurança antes de produção.
 
 ## Próximos passos

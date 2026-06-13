@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Full stack (recommended)
 ```bash
-docker compose up --build   # start frontend + backend + MySQL
+docker compose up --build   # start frontend + backend
 docker compose down          # stop all services
 ```
 
@@ -24,11 +24,11 @@ cd backend
 dotnet restore
 dotnet run       # http://localhost:8080
 ```
-Requires MySQL running locally. The connection string is read from the `CONNECTION_STRING` env var, falling back to `Server=localhost;Port=3306;Database=flexjob;Uid=root;Pwd=rootpassword;`.
+The SQLite database file path is read from the `DB_PATH` env var, falling back to `flexjob.db` in the working directory.
 
 ## Architecture
 
-Three Docker services: `frontend` (React + TypeScript + Vite, port 5173), `backend` (.NET 8 Minimal API, port 8080), `db` (MySQL 8.0, port 3306).
+Two Docker services: `frontend` (React + TypeScript + Vite, port 5173), `backend` (.NET 8 Minimal API, port 8080). The database is SQLite (Microsoft.Data.Sqlite); the backend mounts a `./data` volume and writes the DB file to `/data/flexjob.db` (configurable via `DB_PATH`).
 
 ### Backend (`backend/`)
 
@@ -65,4 +65,4 @@ Single-page app with **no router library**. Navigation is driven by the `AppView
 - Workers see: Map, Jobs, Wallet, Profile
 - Employers see: Map, Workers, Wallet, Profile
 
-Job photos are stored as base64 strings in a `LONGTEXT` MySQL column.
+Job photos are stored as base64 strings in a `TEXT` SQLite column.
