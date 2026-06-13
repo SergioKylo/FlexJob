@@ -1,5 +1,6 @@
+import { toast } from "../utils/toast";
 import { useEffect, useRef, useState } from "react";
-import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star, CreditCard, X, Flag, EyeOff, Eye } from "lucide-react";
+import { MessageSquare, Send, ArrowLeft, Briefcase, Clock, Lock, CheckCircle, AlertCircle, Star, CreditCard, X, Flag, EyeOff, Eye, Gift } from "lucide-react";
 import { api } from "../utils/api";
 import type { ChatMessage, InboxConversation, User } from "../types";
 import { JobProposalModal } from "../components/JobProposalModal";
@@ -15,6 +16,7 @@ type JobDetail = {
   employerName: string;
   workerId?: number;
   workerName?: string;
+  reviewedByMe?: boolean;
 };
 
 type MessagesPageProps = {
@@ -23,6 +25,8 @@ type MessagesPageProps = {
   initialPartnerName?: string;
   initialPartnerAvatar?: string;
   initialJobId?: number;
+  onWalletRefresh?: () => void;
+  t?: (key: any) => string;
 };
 
 export function MessagesPage({
@@ -31,7 +35,11 @@ export function MessagesPage({
   initialPartnerName,
   initialPartnerAvatar,
   initialJobId,
+  onWalletRefresh,
+  t: tProp,
 }: MessagesPageProps) {
+  // Fallback translator that just returns the key when no t prop provided
+  const t = tProp ?? ((key: string) => key);
   const [conversations, setConversations] = useState<InboxConversation[]>([]);
   const [loadingInbox, setLoadingInbox] = useState(true);
   const [selectedConv, setSelectedConv] = useState<InboxConversation | null>(null);
@@ -66,7 +74,33 @@ export function MessagesPage({
     try { return JSON.parse(localStorage.getItem("flexjob_hidden_convs") || "[]"); } catch { return []; }
   });
   const [showCleared, setShowCleared] = useState(false);
+  const [dismissedTips, setDismissedTips] = useState<number[]>(() => {
+    try { return JSON.parse(localStorage.getItem("flexjob_tip_dismissed") || "[]"); } catch { return []; }
+  });
+  const [showPartnerProfile, setShowPartnerProfile] = useState(false);
+  const [partnerReviews, setPartnerReviews] = useState<{ id: number; rating: number; comment: string; reviewer_name: string; created_at: string }[]>([]);
+  const [loadingPartnerReviews, setLoadingPartnerReviews] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Tip prompt goes away once given (payment_tip message exists) or dismissed for this job
+  const tipGiven = messages.some((m) => m.messageType === "payment_tip");
+  const tipDismissed = jobDetail ? dismissedTips.includes(jobDetail.id) : false;
+
+  function dismissTip() {
+    if (!jobDetail) return;
+    const updated = [...dismissedTips, jobDetail.id];
+    setDismissedTips(updated);
+    localStorage.setItem("flexjob_tip_dismissed", JSON.stringify(updated));
+  }
+
+  function openPartnerProfile() {
+    if (!selectedConv) return;
+    setShowPartnerProfile(true);
+    setLoadingPartnerReviews(true);
+    api.getReviews(selectedConv.partnerId)
+      .then((data) => { setPartnerReviews(data); setLoadingPartnerReviews(false); })
+      .catch(() => setLoadingPartnerReviews(false));
+  }
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth < 768);
@@ -174,6 +208,7 @@ export function MessagesPage({
     setPaymentLoading(true);
     try {
       await api.escrowPayment(jobDetail.id, payHours, payDate, payNotes);
+      onWalletRefresh?.();
       const updated = await api.getJobDetail(jobDetail.id);
       setJobDetail(updated);
       setShowPayForm(false);
@@ -182,7 +217,7 @@ export function MessagesPage({
       const data = await api.getMessages(selectedConv!.partnerId, jobId);
       setMessages(data);
     } catch (err: any) {
-      alert(err.message || "Erro ao efetuar pagamento.");
+      toast.error(err.message || t("errorMakingPayment"));
     } finally {
       setPaymentLoading(false);
     }
@@ -198,7 +233,7 @@ export function MessagesPage({
       const data = await api.getMessages(selectedConv!.partnerId, jobId);
       setMessages(data);
     } catch (err: any) {
-      alert(err.message || "Erro ao responder à candidatura.");
+      toast.error(err.message || t("errorRespondingApplication"));
     }
   }
 
@@ -210,7 +245,7 @@ export function MessagesPage({
       setWorkerReviewDone(true);
       setShowWorkerReview(false);
     } catch (err: any) {
-      alert(err.message || "Erro ao enviar avaliação.");
+      toast.error(err.message || t("errorSendingRating"));
     } finally {
       setWorkerReviewLoading(false);
     }
@@ -221,12 +256,13 @@ export function MessagesPage({
     setTipLoading(true);
     try {
       await api.tipWorker(jobDetail.id, tipAmount);
+      onWalletRefresh?.();
       setShowTipForm(false);
       const jobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
       const data = await api.getMessages(selectedConv!.partnerId, jobId);
       setMessages(data);
     } catch (err: any) {
-      alert(err.message || "Erro ao dar gorjeta.");
+      toast.error(err.message || t("errorSendingTip"));
     } finally {
       setTipLoading(false);
     }
@@ -242,7 +278,7 @@ export function MessagesPage({
       setShowReportForm(false);
       setReportReason("");
     } catch (err: any) {
-      alert(err.message || "Erro ao reportar.");
+      toast.error(err.message || t("errorReporting"));
     } finally {
       setReportLoading(false);
     }
@@ -286,7 +322,7 @@ export function MessagesPage({
       const data = await api.getMessages(selectedConv!.partnerId, accept ? jobId : currentJobId);
       setMessages(data);
     } catch (err: any) {
-      alert(err?.message || "Erro ao responder à proposta.");
+      toast.error(err?.message || t("errorRespondingProposal"));
     }
   }
 
@@ -295,6 +331,7 @@ export function MessagesPage({
     setPaymentLoading(true);
     try {
       await api.releasePayment(jobDetail.id, rating, ratingComment);
+      onWalletRefresh?.();
       const updated = await api.getJobDetail(jobDetail.id);
       setJobDetail(updated);
       setShowRatingForm(false);
@@ -302,7 +339,7 @@ export function MessagesPage({
       const data = await api.getMessages(selectedConv!.partnerId, jobId);
       setMessages(data);
     } catch (err: any) {
-      alert(err.message || "Erro ao confirmar trabalho.");
+      toast.error(err.message || t("errorConfirmingWork"));
     } finally {
       setPaymentLoading(false);
     }
@@ -352,14 +389,14 @@ export function MessagesPage({
         <div className="msg-sidebar" style={{ width: isMobile ? "100%" : undefined }}>
           <div className="msg-sidebar-head">
             <div>
-              <h2>Mensagens</h2>
-              <p>{visibleConvs.length} conversa{visibleConvs.length !== 1 ? "s" : ""}</p>
+              <h2>{t("messagesTitle")}</h2>
+              <p>{visibleConvs.length} {visibleConvs.length !== 1 ? t("conversationCount_other") : t("conversationCount_one")}</p>
             </div>
             <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
               {hiddenCount > 0 && (
                 <button
                   onClick={() => setShowCleared((v) => !v)}
-                  title={showCleared ? "Ocultar conversas limpas" : `Mostrar ${hiddenCount} oculta${hiddenCount !== 1 ? "s" : ""}`}
+                  title={showCleared ? t("hideConvTitle") : `${t("showHiddenConvs").replace("{count}", String(hiddenCount))}${hiddenCount !== 1 ? "s" : ""}`}
                   style={{
                     background: showCleared ? "rgba(99,102,241,0.15)" : "var(--surface2)",
                     border: "1px solid " + (showCleared ? "rgba(99,102,241,0.4)" : "var(--line)"),
@@ -376,7 +413,7 @@ export function MessagesPage({
               {conversations.length > 0 && (
                 <button
                   onClick={clearAllConvs}
-                  title="Limpar todas as conversas"
+                  title={t("clearAllConvs")}
                   style={{
                     background: "var(--surface2)", border: "1px solid var(--line)",
                     borderRadius: "8px", padding: "5px 8px", cursor: "pointer",
@@ -394,26 +431,25 @@ export function MessagesPage({
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {loadingInbox ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>A carregar...</div>
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--muted)" }}>{t("loadingInbox")}</div>
             ) : visibleConvs.length === 0 && conversations.length === 0 ? (
               <div style={{ padding: "3rem 1.5rem", textAlign: "center" }}>
                 <MessageSquare size={40} style={{ color: "var(--line)", marginBottom: "1rem", display: "block", margin: "0 auto 1rem" }} />
                 <p style={{ color: "var(--muted)", fontSize: "0.87rem", lineHeight: "1.55", margin: 0 }}>
-                  Ainda não tem conversas.<br />
-                  Candidate-se a vagas ou contacte trabalhadores para começar.
+                  {t("noConversations").split("\n").map((line, i) => <span key={i}>{line}{i === 0 ? <br /> : null}</span>)}
                 </p>
               </div>
             ) : visibleConvs.length === 0 ? (
               <div style={{ padding: "2rem 1.5rem", textAlign: "center" }}>
                 <EyeOff size={32} style={{ color: "var(--line)", marginBottom: "0.75rem", display: "block", margin: "0 auto 0.75rem" }} />
                 <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0 0 0.75rem" }}>
-                  Todas as conversas foram limpas.
+                  {t("allConvsCleared")}
                 </p>
                 <button
                   onClick={restoreAllConvs}
                   style={{ padding: "6px 14px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.8rem", cursor: "pointer", fontWeight: 600 }}
                 >
-                  Restaurar todas
+                  {t("restoreAll")}
                 </button>
               </div>
             ) : (
@@ -465,13 +501,13 @@ export function MessagesPage({
                             </div>
                           )}
                           <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {conv.lastMessage || "Iniciar conversa..."}
+                            {conv.lastMessage || t("initConversation")}
                           </p>
                         </div>
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); hideConv(conv.partnerId, conv.jobId); }}
-                        title="Ocultar conversa"
+                        title={t("hideConversation")}
                         className="msg-conv-hide-btn"
                         style={{
                           background: "none", border: "none", cursor: "pointer",
@@ -497,7 +533,7 @@ export function MessagesPage({
                     onMouseLeave={(e) => e.currentTarget.style.background = "none"}
                   >
                     <Eye size={12} />
-                    Ver {hiddenCount} conversa{hiddenCount !== 1 ? "s" : ""} oculta{hiddenCount !== 1 ? "s" : ""}
+                    {hiddenCount !== 1 ? t("seeHiddenConvs_other").replace("{count}", String(hiddenCount)) : t("seeHiddenConvs_one").replace("{count}", String(hiddenCount))}
                   </button>
                 )}
                 {showCleared && hiddenCount > 0 && (
@@ -511,7 +547,7 @@ export function MessagesPage({
                     onMouseEnter={(e) => e.currentTarget.style.background = "var(--surface2)"}
                     onMouseLeave={(e) => e.currentTarget.style.background = "none"}
                   >
-                    Restaurar todas as ocultas
+                    {t("restoreAllHidden")}
                   </button>
                 )}
               </>
@@ -536,10 +572,16 @@ export function MessagesPage({
                 <img
                   src={avatarUrl(selectedConv.partnerId, selectedConv.partnerAvatar)}
                   alt={selectedConv.partnerName}
-                  style={{ width: "38px", height: "38px", borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "2px solid var(--line)" }}
+                  onClick={openPartnerProfile}
+                  title={t("viewProfile")}
+                  style={{ width: "38px", height: "38px", borderRadius: "50%", objectFit: "cover", flexShrink: 0, border: "2px solid var(--line)", cursor: "pointer" }}
                 />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <h3 style={{ margin: 0, fontSize: "0.92rem", fontWeight: "700", color: "var(--ink)" }}>
+                  <h3
+                    onClick={openPartnerProfile}
+                    title={t("viewProfile")}
+                    style={{ margin: 0, fontSize: "0.92rem", fontWeight: "700", color: "var(--ink)", cursor: "pointer" }}
+                  >
                     {selectedConv.partnerName}
                   </h3>
                   {selectedConv.jobTitle && (
@@ -557,11 +599,11 @@ export function MessagesPage({
                 )}
                 {/* Report button */}
                 {reportSent ? (
-                  <span style={{ fontSize: "0.7rem", color: "#ef4444", fontWeight: 700, flexShrink: 0 }}>🚩 Reportado</span>
+                  <span style={{ fontSize: "0.7rem", color: "#ef4444", fontWeight: 700, flexShrink: 0 }}>{t("reportSent")}</span>
                 ) : (
                   <button
                     onClick={() => setShowReportForm((v) => !v)}
-                    title="Reportar conversa"
+                    title={t("reportConversation")}
                     style={{
                       background: showReportForm ? "rgba(239,68,68,0.12)" : "none",
                       border: "1px solid " + (showReportForm ? "rgba(239,68,68,0.4)" : "transparent"),
@@ -572,13 +614,13 @@ export function MessagesPage({
                     }}
                   >
                     <Flag size={12} />
-                    Reportar
+                    {t("reportConversation")}
                   </button>
                 )}
                 {isEmployer && (
                   <button
                     onClick={() => setShowProposalModal(true)}
-                    title="Propor trabalho"
+                    title={t("proposeWork")}
                     style={{
                       display: "flex", alignItems: "center", gap: "0.35rem",
                       padding: "0.4rem 0.8rem", borderRadius: "10px",
@@ -591,7 +633,7 @@ export function MessagesPage({
                     onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(251,191,36,0.1)"; }}
                   >
                     <Briefcase size={14} />
-                    Propor
+                    {t("proposeWork")}
                   </button>
                 )}
                 {canPay && (
@@ -606,7 +648,7 @@ export function MessagesPage({
                     }}
                   >
                     <CreditCard size={14} />
-                    Pagar antecipadamente
+                    {t("payInAdvance")}
                   </button>
                 )}
               </div>
@@ -615,7 +657,7 @@ export function MessagesPage({
               {showReportForm && !reportSent && (
                 <div style={{ padding: "0.9rem 1.25rem", borderBottom: "1px solid var(--line)", background: "rgba(239,68,68,0.05)", borderLeft: "3px solid #ef4444" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.6rem" }}>
-                    <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 700, color: "#ef4444" }}>🚩 Reportar esta conversa ao Admin</p>
+                    <p style={{ margin: 0, fontSize: "0.82rem", fontWeight: 700, color: "#ef4444" }}>🚩 {t("reportTitle")}</p>
                     <button onClick={() => setShowReportForm(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "0.2rem" }}>
                       <X size={14} />
                     </button>
@@ -623,7 +665,7 @@ export function MessagesPage({
                   <textarea
                     value={reportReason}
                     onChange={(e) => setReportReason(e.target.value)}
-                    placeholder="Motivo do reporte (opcional)..."
+                    placeholder={t("reportPlaceholder")}
                     rows={2}
                     className="msg-input"
                     style={{ width: "100%", boxSizing: "border-box", resize: "none", marginBottom: "0.5rem", fontSize: "0.82rem" }}
@@ -631,11 +673,11 @@ export function MessagesPage({
                   <div style={{ display: "flex", gap: "0.5rem" }}>
                     <button onClick={() => setShowReportForm(false)}
                       style={{ flex: 1, padding: "0.45rem", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", cursor: "pointer", fontSize: "0.8rem", fontWeight: 600 }}>
-                      Cancelar
+                      {t("reportCancel")}
                     </button>
                     <button onClick={handleReport} disabled={reportLoading}
                       style={{ flex: 2, padding: "0.45rem", borderRadius: 8, border: "none", background: "#ef4444", color: "#fff", cursor: "pointer", fontSize: "0.8rem", fontWeight: 700, opacity: reportLoading ? 0.6 : 1 }}>
-                      {reportLoading ? "A enviar..." : "Confirmar Reporte 🚩"}
+                      {reportLoading ? t("reportSending") : t("reportConfirm")}
                     </button>
                   </div>
                 </div>
@@ -646,7 +688,7 @@ export function MessagesPage({
                 <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--line)", background: "var(--surface2)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
                     <h4 style={{ margin: 0, fontSize: "0.85rem", fontWeight: "700", color: "var(--ink)" }}>
-                      💳 Depositar pagamento em garantia
+                      💳 {t("escrowTitle")}
                     </h4>
                     <button onClick={() => setShowPayForm(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--muted)", padding: "0.2rem" }}>
                       <X size={16} />
@@ -654,7 +696,7 @@ export function MessagesPage({
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.6rem", marginBottom: "0.6rem" }}>
                     <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                      <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Horas</span>
+                      <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("hoursLabel")}</span>
                       <input
                         type="number"
                         min={0.5}
@@ -666,7 +708,7 @@ export function MessagesPage({
                       />
                     </label>
                     <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-                      <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Data do trabalho</span>
+                      <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("workDateLabel")}</span>
                       <input
                         type="date"
                         value={payDate}
@@ -682,7 +724,7 @@ export function MessagesPage({
                   </div>
                   <input
                     type="text"
-                    placeholder="Notas para o trabalhador (opcional)..."
+                    placeholder={t("payNoteLabel")}
                     value={payNotes}
                     onChange={(e) => setPayNotes(e.target.value)}
                     className="msg-input"
@@ -698,7 +740,7 @@ export function MessagesPage({
                       opacity: paymentLoading ? 0.6 : 1,
                     }}
                   >
-                    {paymentLoading ? "A processar..." : `💳 Pagar Antecipadamente €${(payHours * jobDetail!.pay).toFixed(2)}`}
+                    {paymentLoading ? t("processingPayment") : `💳 ${t("payInAdvance")} €${(payHours * jobDetail!.pay).toFixed(2)}`}
                   </button>
                 </div>
               )}
@@ -707,13 +749,13 @@ export function MessagesPage({
               <div className="msg-chat-area">
                 {loadingMessages && messages.length === 0 ? (
                   <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)" }}>
-                    A carregar mensagens...
+                    {t("loadingMessages")}
                   </div>
                 ) : messages.length === 0 ? (
                   <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--muted)", textAlign: "center", gap: "0.75rem", padding: "2rem" }}>
                     <MessageSquare size={44} style={{ opacity: 0.25 }} />
                     <p style={{ margin: 0, fontSize: "0.9rem" }}>
-                      Inicie a conversa com {selectedConv.partnerName}!
+                      {t("startConversation")} {selectedConv.partnerName}!
                     </p>
                   </div>
                 ) : (
@@ -738,20 +780,30 @@ export function MessagesPage({
                     <>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(34,201,122,0.1)", border: "1px solid rgba(34,201,122,0.25)", color: "var(--green)" }}>
                         <CheckCircle size={16} />
-                        <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>Trabalho concluído · €{jobDetail!.pay.toFixed(2)} pagos</span>
+                        <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>{t("jobDoneConfirm").replace("{amount}", jobDetail!.pay.toFixed(2))}</span>
                       </div>
-                      {isEmployer && (
+                      {isEmployer && !tipGiven && !tipDismissed && (
                         <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem", marginTop: "0.2rem" }}>
                           {!showTipForm ? (
-                            <button
-                              onClick={() => setShowTipForm(true)}
-                              style={{ width: "100%", padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontWeight: "600", fontSize: "0.82rem", cursor: "pointer" }}
-                            >
-                              🎁 Dar Gorjeta ao Trabalhador
-                            </button>
+                            <div style={{ display: "flex", gap: "0.5rem" }}>
+                              <button
+                                onClick={() => setShowTipForm(true)}
+                                style={{ flex: 1, padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontWeight: "600", fontSize: "0.82rem", cursor: "pointer" }}
+                              >
+                                🎁 {t("tipWorker")}
+                              </button>
+                              <button
+                                onClick={dismissTip}
+                                aria-label="Fechar"
+                                title={t("tipDismiss")}
+                                style={{ padding: "0 0.7rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--muted)", cursor: "pointer", display: "flex", alignItems: "center" }}
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
                           ) : (
                             <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-                              <span style={{ fontSize: "0.72rem", color: "var(--muted)", fontWeight: "600", textTransform: "uppercase" }}>Valor da gorjeta (€)</span>
+                              <span style={{ fontSize: "0.72rem", color: "var(--muted)", fontWeight: "600", textTransform: "uppercase" }}>{t("tipAmount")}</span>
                               <input
                                 type="number"
                                 min={0.5}
@@ -766,14 +818,14 @@ export function MessagesPage({
                                   onClick={() => setShowTipForm(false)}
                                   style={{ flex: 1, padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", cursor: "pointer", fontWeight: "600", fontSize: "0.82rem" }}
                                 >
-                                  Cancelar
+                                  {t("tipCancel")}
                                 </button>
                                 <button
                                   onClick={handleTip}
                                   disabled={tipLoading}
                                   style={{ flex: 2, padding: "0.5rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", cursor: "pointer", fontWeight: "700", fontSize: "0.82rem", opacity: tipLoading ? 0.6 : 1 }}
                                 >
-                                  {tipLoading ? "A enviar..." : `Dar €${tipAmount.toFixed(2)} de Gorjeta 🎁`}
+                                  {tipLoading ? t("sendingTip") : t("sendTip").replace("{amount}", tipAmount.toFixed(2))}
                                 </button>
                               </div>
                             </div>
@@ -786,13 +838,13 @@ export function MessagesPage({
                   {workerEscrow && !jobDone && (
                     <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", color: "#6366f1" }}>
                       <CreditCard size={16} />
-                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>💳 Pagamento recebido antecipadamente — aguarda confirmação após o trabalho</span>
+                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>{t("workerEscrowMessage")}</span>
                     </div>
                   )}
                   {awaitingConfirmation && !jobDone && !isEmployer && (
                     <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)", color: "#6366f1" }}>
                       <CreditCard size={16} />
-                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>💳 Pagamento recebido antecipadamente — aguarda confirmação após o trabalho</span>
+                      <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>{t("workerEscrowMessage")}</span>
                     </div>
                   )}
 
@@ -807,14 +859,14 @@ export function MessagesPage({
                       }}
                     >
                       <CheckCircle size={15} />
-                      Confirmar Trabalho Concluído · Pagar €{jobDetail!.pay.toFixed(2)}
+                      {t("confirmJobDone").replace("{amount}", jobDetail!.pay.toFixed(2))}
                     </button>
                   )}
 
                   {showRatingForm && !jobDone && (
                     <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
                       <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: "700", color: "var(--muted)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                        Avalie o trabalhador
+                        {t("rateWorker")}
                       </p>
                       <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
                         {[1, 2, 3, 4, 5].map((s) => (
@@ -827,7 +879,7 @@ export function MessagesPage({
                       <input
                         type="text"
                         className="msg-input"
-                        placeholder="Comentário sobre o trabalhador (opcional)..."
+                        placeholder={t("ratingComment")}
                         value={ratingComment}
                         onChange={(e) => setRatingComment(e.target.value)}
                         style={{ width: "100%", boxSizing: "border-box" }}
@@ -835,30 +887,30 @@ export function MessagesPage({
                       <div style={{ display: "flex", gap: "0.5rem" }}>
                         <button onClick={() => setShowRatingForm(false)}
                           style={{ flex: 1, padding: "0.55rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", cursor: "pointer", fontWeight: "600" }}>
-                          Cancelar
+                          {t("ratingCancel")}
                         </button>
                         <button onClick={handleRelease} disabled={paymentLoading}
                           style={{ flex: 2, padding: "0.55rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", cursor: "pointer", fontWeight: "700", opacity: paymentLoading ? 0.6 : 1 }}>
-                          {paymentLoading ? "A confirmar..." : "Confirmar trabalho e pagar"}
+                          {paymentLoading ? t("confirmingPayment") : t("confirmAndPay")}
                         </button>
                       </div>
                     </div>
                   )}
 
-                  {/* Worker rates employer after job done */}
-                  {jobDone && !isEmployer && !workerReviewDone && (
+                  {/* Worker rates employer after job done — hidden once reviewed (persists via reviewedByMe) */}
+                  {jobDone && !isEmployer && !workerReviewDone && !jobDetail?.reviewedByMe && (
                     <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem", marginTop: "0.2rem" }}>
                       {!showWorkerReview ? (
                         <button
                           onClick={() => setShowWorkerReview(true)}
                           style={{ width: "100%", padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontWeight: "600", fontSize: "0.82rem", cursor: "pointer" }}
                         >
-                          ⭐ Avaliar o empreendedor
+                          ⭐ {t("rateEmployer")}
                         </button>
                       ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                           <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: "700", color: "var(--muted)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                            Como foi trabalhar com este empreendedor?
+                            {t("rateEmployerQuestion")}
                           </p>
                           <div style={{ display: "flex", gap: "0.4rem", justifyContent: "center" }}>
                             {[1, 2, 3, 4, 5].map((s) => (
@@ -871,7 +923,7 @@ export function MessagesPage({
                           <input
                             type="text"
                             className="msg-input"
-                            placeholder="Comentário (opcional)..."
+                            placeholder={t("ratingCommentShort")}
                             value={workerReviewComment}
                             onChange={(e) => setWorkerReviewComment(e.target.value)}
                             style={{ width: "100%", boxSizing: "border-box" }}
@@ -879,11 +931,11 @@ export function MessagesPage({
                           <div style={{ display: "flex", gap: "0.5rem" }}>
                             <button onClick={() => setShowWorkerReview(false)}
                               style={{ flex: 1, padding: "0.5rem", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", cursor: "pointer", fontWeight: "600", fontSize: "0.82rem" }}>
-                              Cancelar
+                              {t("ratingCancel")}
                             </button>
                             <button onClick={handleWorkerReview} disabled={workerReviewLoading}
                               style={{ flex: 2, padding: "0.5rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #f59e0b, #d97706)", color: "#fff", cursor: "pointer", fontWeight: "700", fontSize: "0.82rem", opacity: workerReviewLoading ? 0.6 : 1 }}>
-                              {workerReviewLoading ? "A enviar..." : "Enviar avaliação ⭐"}
+                              {workerReviewLoading ? t("sendingRating") : t("sendRating")}
                             </button>
                           </div>
                         </div>
@@ -891,7 +943,7 @@ export function MessagesPage({
                     </div>
                   )}
                   {jobDone && !isEmployer && workerReviewDone && (
-                    <p style={{ margin: "0.4rem 0 0", fontSize: "0.78rem", color: "#22c97a", fontWeight: "600", textAlign: "center" }}>✓ Avaliação enviada. Obrigado!</p>
+                    <p style={{ margin: "0.4rem 0 0", fontSize: "0.78rem", color: "#22c97a", fontWeight: "600", textAlign: "center" }}>{t("ratingThankYou")}</p>
                   )}
                 </div>
               )}
@@ -902,7 +954,7 @@ export function MessagesPage({
                   type="text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder={`Mensagem para ${selectedConv.partnerName}...`}
+                  placeholder={`${t("messageInputPlaceholder")} ${selectedConv.partnerName}...`}
                   className="msg-input"
                 />
                 <button
@@ -925,9 +977,9 @@ export function MessagesPage({
             <div className="msg-empty">
               <MessageSquare size={56} style={{ opacity: 0.15 }} />
               <div>
-                <p style={{ margin: 0, fontSize: "1rem", fontWeight: "600", color: "var(--muted)" }}>Selecione uma conversa</p>
+                <p style={{ margin: 0, fontSize: "1rem", fontWeight: "600", color: "var(--muted)" }}>{t("selectConversation")}</p>
                 <p style={{ margin: "0.4rem 0 0", fontSize: "0.83rem", color: "var(--muted)", opacity: 0.7 }}>
-                  ou inicie uma nova a partir do mapa ou vagas
+                  {t("selectConversationHint")}
                 </p>
               </div>
             </div>
@@ -936,6 +988,63 @@ export function MessagesPage({
       )}
 
       {/* Job Proposal Modal — employer sends proposal from any chat */}
+      {/* Partner profile modal — info + reviews from others */}
+      {showPartnerProfile && selectedConv && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000, padding: "1rem" }}
+          onClick={() => setShowPartnerProfile(false)}
+        >
+          <div
+            style={{ width: "100%", maxWidth: "420px", maxHeight: "80vh", overflowY: "auto", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "16px" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "1.5rem 1.5rem 1rem", textAlign: "center", position: "relative", background: "linear-gradient(135deg, rgba(99,102,241,0.15), rgba(79,70,229,0.08))" }}>
+              <button
+                onClick={() => setShowPartnerProfile(false)}
+                aria-label="Fechar"
+                style={{ position: "absolute", top: "0.9rem", right: "0.9rem", background: "var(--surface2)", border: "1px solid var(--line)", color: "var(--ink)", borderRadius: "50%", width: "30px", height: "30px", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+              >
+                <X size={14} />
+              </button>
+              <img
+                src={avatarUrl(selectedConv.partnerId, selectedConv.partnerAvatar)}
+                alt={selectedConv.partnerName}
+                style={{ width: "72px", height: "72px", borderRadius: "50%", objectFit: "cover", border: "3px solid #6366f1", padding: "3px", margin: "0 auto 0.6rem", background: "var(--surface2)" }}
+              />
+              <h3 style={{ margin: "0 0 0.2rem", fontSize: "1.15rem", fontWeight: "700", color: "var(--ink)" }}>{selectedConv.partnerName}</h3>
+              {partnerReviews.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.3rem", color: "#facc15", fontSize: "0.95rem" }}>
+                  <Star size={15} fill="#facc15" />
+                  <strong>{(partnerReviews.reduce((s, r) => s + r.rating, 0) / partnerReviews.length).toFixed(1)}</strong>
+                  <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}>({partnerReviews.length})</span>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "1rem 1.5rem 1.5rem" }}>
+              <h4 style={{ margin: "0 0 0.6rem", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>{t("recentReviews")}</h4>
+              {loadingPartnerReviews ? (
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>{t("loadingReviews")}</p>
+              ) : partnerReviews.length === 0 ? (
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: 0 }}>{t("noReviews")}</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+                  {partnerReviews.map((r) => (
+                    <div key={r.id} style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.75rem" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.3rem" }}>
+                        <Star size={13} fill="#facc15" style={{ color: "#facc15" }} />
+                        <strong style={{ fontSize: "0.85rem", color: "var(--ink)" }}>{r.rating.toFixed(1)}</strong>
+                        <span style={{ fontSize: "0.78rem", color: "var(--muted)", marginLeft: "auto" }}>{r.reviewer_name}</span>
+                      </div>
+                      {r.comment && <p style={{ margin: 0, fontSize: "0.82rem", color: "var(--ink)", lineHeight: "1.45" }}>{r.comment}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showProposalModal && selectedConv && (
         <JobProposalModal
           workerId={selectedConv.partnerId}
@@ -992,16 +1101,55 @@ function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal, respond
     );
   }
 
+  if (type === "admin_warning") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.6rem 0" }}>
+        <div style={{ width: "100%", maxWidth: "440px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.5)", background: "rgba(239,68,68,0.07)", overflow: "hidden" }}>
+          <div style={{ padding: "8px 14px", background: "rgba(239,68,68,0.14)", borderBottom: "1px solid rgba(239,68,68,0.3)", display: "flex", alignItems: "center", gap: "8px" }}>
+            <AlertCircle size={15} style={{ color: "#ef4444", flexShrink: 0 }} />
+            <span style={{ fontWeight: 800, fontSize: "0.78rem", color: "#ef4444", textTransform: "uppercase", letterSpacing: "0.6px" }}>Aviso da Administração</span>
+            <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: "var(--muted)" }}>
+              {new Date(msg.createdAt).toLocaleString([], { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+            </span>
+          </div>
+          <div style={{ padding: "10px 14px" }}>
+            <p style={{ margin: 0, fontSize: "0.86rem", color: "var(--ink)", lineHeight: 1.55 }}>{msg.content}</p>
+            <p style={{ margin: "8px 0 0", fontSize: "0.72rem", color: "#ef4444", fontWeight: 600 }}>
+              ⚠ Este aviso conta para o limite de 3 avisos. Ao terceiro aviso a conta é suspensa.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "payment_tip") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.4rem 0" }}>
+        <div style={{
+          padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%",
+          background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)",
+          display: "flex", alignItems: "center", gap: "0.6rem",
+        }}>
+          <Gift size={16} style={{ color: "#f59e0b", flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+        </div>
+      </div>
+    );
+  }
+
   if (type === "job_proposal") {
     let data: { jobId?: number; title?: string; description?: string; pay?: number; duration?: string; workDate?: string; address?: string } = {};
     try { data = JSON.parse(msg.content); } catch {}
     const jobId = data.jobId ?? 0;
+    // Responded either in this session or (after refresh) per the job's real status
+    const alreadyResponded = respondedProposals?.has(jobId) || (!!msg.jobStatus && msg.jobStatus !== "proposed");
     return (
       <div style={{ display: "flex", justifyContent: "center", margin: "0.6rem 0" }}>
         <div style={{ width: "100%", maxWidth: "380px", background: "var(--surface2)", border: "2px solid rgba(251,191,36,0.35)", borderRadius: "16px", overflow: "hidden" }}>
           <div style={{ padding: "10px 14px 8px", background: "rgba(251,191,36,0.1)", borderBottom: "1px solid rgba(251,191,36,0.2)", display: "flex", alignItems: "center", gap: "8px" }}>
             <Briefcase size={15} style={{ color: "#f59e0b", flexShrink: 0 }} />
-            <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "var(--ink)" }}>Proposta de Trabalho</span>
+            <span style={{ fontWeight: 800, fontSize: "0.85rem", color: "var(--ink)" }}>Proposta de Trabalho</span>{/* NOTE: MessageBubble does not receive t — proposal title uses hardcoded PT string here */}
             <span style={{ marginLeft: "auto", fontSize: "0.7rem", color: "var(--muted)" }}>
               {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>
@@ -1018,7 +1166,7 @@ function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal, respond
               {data.address && <span style={{ fontSize: "0.78rem", color: "var(--muted)", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "6px", padding: "2px 7px" }}>📍 {data.address}</span>}
             </div>
           </div>
-          {onRespondProposal && jobId > 0 && !respondedProposals?.has(jobId) ? (
+          {onRespondProposal && jobId > 0 && !alreadyResponded ? (
             <div style={{ padding: "8px 14px 12px", display: "flex", gap: "8px" }}>
               <button onClick={() => onRespondProposal(jobId, true)}
                 style={{ flex: 1, padding: "8px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #22c97a, #16a361)", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>
@@ -1031,9 +1179,13 @@ function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal, respond
             </div>
           ) : (
             <div style={{ padding: "6px 14px 10px" }}>
-              <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", fontStyle: "italic" }}>
-                {respondedProposals?.has(jobId)
-                  ? "✓ Já respondeste a esta proposta"
+              <p style={{ margin: 0, fontSize: "0.78rem", color: alreadyResponded && msg.jobStatus === "closed" ? "#f06060" : alreadyResponded ? "#22c97a" : "var(--muted)", fontStyle: "italic", fontWeight: alreadyResponded ? 700 : 400 }}>
+                {alreadyResponded
+                  ? (msg.jobStatus === "closed"
+                      ? "✗ Proposta recusada"
+                      : isMe
+                      ? "✓ Proposta aceite"
+                      : "✓ Já respondeste a esta proposta")
                   : isMe
                   ? "Aguarda a resposta do trabalhador..."
                   : "Proposta recebida"}

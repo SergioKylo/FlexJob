@@ -1,23 +1,26 @@
-import { useState } from "react";
+import { toast } from "../utils/toast";
+import { useEffect, useState } from "react";
 import { Star, MessageSquare, Search, MapPin, Clock, X, ChevronUp, ChevronDown, Settings } from "lucide-react";
 import type { Opportunity, MatchRecord, User } from "../types";
+import type { TranslationKey } from "../i18n/translations";
 import { api } from "../utils/api";
+import { WEEKDAYS } from "../utils/weekdays";
 
 type JobsPageProps = {
   needs: Opportunity[];
   matches: MatchRecord[];
-  t: (key: any) => string;
+  t: (key: TranslationKey) => string;
   user: User;
   onCreateMatch: (item: Opportunity) => void;
   onStartChat: (partnerId: number, partnerName: string, partnerAvatar?: string, jobId?: number) => void;
 };
 
-const CATEGORY_META: Record<string, { label: string; emoji: string; gradient: string }> = {
-  restauracao: { label: "Restauração", emoji: "🍽️", gradient: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)" },
-  eventos:     { label: "Eventos",     emoji: "🎪", gradient: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)" },
-  logistica:   { label: "Logística",   emoji: "📦", gradient: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)" },
-  casa:        { label: "Casa",        emoji: "🏠", gradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)" },
-  retalho:     { label: "Retalho",     emoji: "🛍️", gradient: "linear-gradient(135deg, #ec4899 0%, #db2777 100%)" },
+const CATEGORY_META: Record<string, { emoji: string; gradient: string }> = {
+  restauracao: { emoji: "🍽️", gradient: "linear-gradient(135deg, #f97316 0%, #ea580c 100%)" },
+  eventos:     { emoji: "🎪", gradient: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)" },
+  logistica:   { emoji: "📦", gradient: "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)" },
+  casa:        { emoji: "🏠", gradient: "linear-gradient(135deg, #10b981 0%, #059669 100%)" },
+  retalho:     { emoji: "🛍️", gradient: "linear-gradient(135deg, #ec4899 0%, #db2777 100%)" },
 };
 
 const REGIONS = [
@@ -44,22 +47,7 @@ function nearestRegion(lat?: number, lng?: number): string {
 
 type SortKey = "distance" | "pay" | "rating";
 
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "distance", label: "Distância" },
-  { key: "pay",      label: "Pagamento" },
-  { key: "rating",   label: "Avaliação" },
-];
-
-const CATEGORIES = [
-  { value: "all",        label: "Todas" },
-  { value: "restauracao", label: "Restauração" },
-  { value: "eventos",    label: "Eventos" },
-  { value: "logistica",  label: "Logística" },
-  { value: "casa",       label: "Casa" },
-  { value: "retalho",    label: "Retalho" },
-];
-
-export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: JobsPageProps) {
+export function JobsPage({ needs, matches, onCreateMatch, onStartChat, t, user }: JobsPageProps) {
   const [searchTerm, setSearchTerm]           = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [sortKey, setSortKey]                 = useState<SortKey>("distance");
@@ -74,8 +62,31 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
   const [availStart, setAvailStart] = useState("09:00");
   const [availEnd, setAvailEnd]     = useState("18:00");
   const [availActive, setAvailActive] = useState(true);
+  const [availCategory, setAvailCategory] = useState("restauracao");
+  const [availDays, setAvailDays]   = useState<string[]>([]);
   const [savingAvail, setSavingAvail] = useState(false);
   const [availSaved, setAvailSaved] = useState(false);
+
+  // Pre-fill the form with the worker's saved availability
+  useEffect(() => {
+    if (user.role !== "worker") return;
+    api.getMyAvailability()
+      .then((a) => {
+        setAvailRegion(nearestRegion(a.lat, a.lng));
+        setAvailRate(a.hourlyRate);
+        setAvailRadius(a.radius);
+        setAvailStart(a.startTime || "09:00");
+        setAvailEnd(a.endTime || "18:00");
+        setAvailActive(a.isActive);
+        if (a.category && a.category !== "outros") setAvailCategory(a.category);
+        setAvailDays(a.days ? a.days.split(",").filter(Boolean) : []);
+      })
+      .catch(() => { /* no availability saved yet — keep defaults */ });
+  }, [user.id, user.role]);
+
+  function toggleDay(key: string) {
+    setAvailDays((prev) => prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]);
+  }
 
   async function handleSaveAvailability(e: React.FormEvent) {
     e.preventDefault();
@@ -89,12 +100,14 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
         endTime: availEnd,
         hourlyRate: availRate,
         isActive: availActive,
+        category: availCategory,
+        days: availDays.join(","),
       });
       setAvailSaved(true);
       setShowAvail(false);
       setTimeout(() => setAvailSaved(false), 3000);
     } catch (err: any) {
-      alert(err.message || "Erro ao guardar disponibilidade.");
+      toast.error(err.message || "Erro ao guardar disponibilidade.");
     } finally {
       setSavingAvail(false);
     }
@@ -104,6 +117,29 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
     if (sortKey === key) setSortAsc((v) => !v);
     else { setSortKey(key); setSortAsc(key === "distance"); }
   }
+
+  const SORT_OPTIONS: { key: SortKey; label: string }[] = [
+    { key: "distance", label: t("sortDistance") },
+    { key: "pay",      label: t("sortPay") },
+    { key: "rating",   label: t("sortRating") },
+  ];
+
+  const CATEGORIES = [
+    { value: "all",        label: t("catAll") },
+    { value: "restauracao", label: t("restauracao") },
+    { value: "eventos",    label: t("eventos") },
+    { value: "logistica",  label: t("logistica") },
+    { value: "casa",       label: t("casa") },
+    { value: "retalho",    label: t("retalho") },
+  ];
+
+  const AVAIL_CATEGORIES = [
+    { value: "restauracao", label: t("restauracao") },
+    { value: "eventos",     label: t("eventos") },
+    { value: "logistica",   label: t("logistica") },
+    { value: "casa",        label: t("casa") },
+    { value: "retalho",     label: t("retalho") },
+  ];
 
   const filtered = needs
     .filter((job) => {
@@ -123,6 +159,8 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
       return sortAsc ? diff : -diff;
     });
 
+  const activeSortLabel = SORT_OPTIONS.find((s) => s.key === sortKey)?.label.toLowerCase() ?? "";
+
   return (
     <section style={{ padding: "2rem", maxWidth: "1200px", margin: "0 auto" }}>
       {/* Availability panel for workers */}
@@ -138,8 +176,8 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
           >
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
               <Settings size={16} style={{ color: "#6366f1" }} />
-              <span style={{ fontWeight: "700", fontSize: "0.9rem" }}>Definir a Minha Disponibilidade</span>
-              {availSaved && <span style={{ fontSize: "0.75rem", color: "#22c97a", fontWeight: "600" }}>✓ Guardado!</span>}
+              <span style={{ fontWeight: "700", fontSize: "0.9rem" }}>{t("myAvailabilityTitle")}</span>
+              {availSaved && <span style={{ fontSize: "0.75rem", color: "#22c97a", fontWeight: "600" }}>{t("availabilitySaved")}</span>}
             </div>
             {showAvail ? <ChevronUp size={16} style={{ color: "var(--muted)" }} /> : <ChevronDown size={16} style={{ color: "var(--muted)" }} />}
           </button>
@@ -147,28 +185,28 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
           {showAvail && (
             <form onSubmit={handleSaveAvailability} style={{ padding: "0 1.25rem 1.25rem", borderTop: "1px solid var(--line)" }}>
               <p style={{ fontSize: "0.82rem", color: "var(--muted)", margin: "0.75rem 0 1rem" }}>
-                Os empreendedores verão a sua localização e perfil no mapa.
+                {t("availabilitySubtitle")}
               </p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Região</span>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("regionLabel")}</span>
                   <select value={availRegion} onChange={(e) => setAvailRegion(e.target.value)}
                     style={{ padding: "0.5rem 0.7rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }}>
                     {REGIONS.map((r) => <option key={r.name} value={r.name}>{r.name}</option>)}
                   </select>
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Taxa (€/h)</span>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("rateLabel")}</span>
                   <input type="number" min={5} max={200} value={availRate} onChange={(e) => setAvailRate(Number(e.target.value))}
                     style={{ padding: "0.5rem 0.7rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }} />
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Raio (km)</span>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("radiusLabel")}</span>
                   <input type="number" min={1} max={100} value={availRadius} onChange={(e) => setAvailRadius(Number(e.target.value))}
                     style={{ padding: "0.5rem 0.7rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }} />
                 </label>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
-                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Horário</span>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("scheduleLabel")}</span>
                   <div style={{ display: "flex", gap: "0.4rem", alignItems: "center" }}>
                     <input type="time" value={availStart} onChange={(e) => setAvailStart(e.target.value)}
                       style={{ flex: 1, padding: "0.5rem 0.4rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.82rem" }} />
@@ -177,14 +215,43 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
                       style={{ flex: 1, padding: "0.5rem 0.4rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.82rem" }} />
                   </div>
                 </div>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.3rem" }}>
+                  <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("categoryLabel")}</span>
+                  <select value={availCategory} onChange={(e) => setAvailCategory(e.target.value)}
+                    style={{ padding: "0.5rem 0.7rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }}>
+                    {AVAIL_CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div style={{ marginBottom: "0.9rem" }}>
+                <span style={{ fontSize: "0.72rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("availableDays")}</span>
+                <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", marginTop: "0.4rem" }}>
+                  {WEEKDAYS.map((d) => {
+                    const on = availDays.includes(d.key);
+                    return (
+                      <button type="button" key={d.key} onClick={() => toggleDay(d.key)}
+                        style={{
+                          padding: "0.35rem 0.75rem", borderRadius: "16px", cursor: "pointer",
+                          border: on ? "1px solid #6366f1" : "1px solid var(--line)",
+                          background: on ? "rgba(99,102,241,0.18)" : "var(--surface2)",
+                          color: on ? "#a5b4fc" : "var(--muted)", fontSize: "0.78rem", fontWeight: "600",
+                        }}>
+                        {d.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p style={{ fontSize: "0.72rem", color: "var(--muted)", margin: "0.35rem 0 0" }}>
+                  {t("noDaysSelected")}
+                </p>
               </div>
               <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.9rem", cursor: "pointer" }}>
                 <input type="checkbox" checked={availActive} onChange={(e) => setAvailActive(e.target.checked)} style={{ width: "16px", height: "16px" }} />
-                <span style={{ fontSize: "0.85rem", color: "var(--ink)" }}>Estou disponível para trabalhar hoje</span>
+                <span style={{ fontSize: "0.85rem", color: "var(--ink)" }}>{t("availableActive")}</span>
               </label>
               <button type="submit" disabled={savingAvail}
                 style={{ width: "100%", padding: "0.65rem", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", fontWeight: "700", fontSize: "0.9rem", cursor: "pointer", opacity: savingAvail ? 0.6 : 1 }}>
-                {savingAvail ? "A guardar..." : "Guardar Disponibilidade"}
+                {savingAvail ? t("savingAvailability") : t("saveAvailability")}
               </button>
             </form>
           )}
@@ -194,13 +261,13 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
       {/* Header */}
       <div style={{ marginBottom: "2rem" }}>
         <p style={{ color: "#6366f1", letterSpacing: "1px", textTransform: "uppercase", fontSize: "0.75rem", fontWeight: "600", margin: "0 0 0.4rem" }}>
-          Trabalhos próximos de si
+          {t("jobsNearby")}
         </p>
         <h2 style={{ fontSize: "1.75rem", fontWeight: "700", color: "var(--ink)", margin: "0 0 0.5rem" }}>
-          Oportunidades disponíveis
+          {t("availableOpportunities")}
         </h2>
         <p style={{ color: "var(--muted)", margin: 0, fontSize: "0.9rem" }}>
-          {filtered.length} vaga{filtered.length !== 1 ? "s" : ""} encontrada{filtered.length !== 1 ? "s" : ""} · ordenadas por {SORT_OPTIONS.find(s => s.key === sortKey)?.label.toLowerCase()}
+          {filtered.length} {filtered.length !== 1 ? t("vacanciesFound_other") : t("vacanciesFound_one")} · {t("sortedBy")} {activeSortLabel}
         </p>
       </div>
 
@@ -211,7 +278,7 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
           <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
           <input
             type="text"
-            placeholder="Pesquisar por título, empresa ou descrição..."
+            placeholder={t("jobSearchPlaceholder")}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: "100%", padding: "0.7rem 0.75rem 0.7rem 2.4rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.9rem", outline: "none", boxSizing: "border-box" }}
@@ -276,25 +343,26 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
       {/* Jobs grid */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "1.25rem" }}>
         {filtered.map((job) => {
-          const meta = CATEGORY_META[job.type] ?? { label: job.type, emoji: "💼", gradient: "linear-gradient(135deg, #6366f1, #4f46e5)" };
+          const meta = CATEGORY_META[job.type] ?? { emoji: "💼", gradient: "linear-gradient(135deg, #6366f1, #4f46e5)" };
           const applied = matches.some((m) => m.itemId === job.id);
 
           return (
             <JobCard
               key={job.id}
               job={job}
-              meta={meta}
+              meta={{ ...meta, label: t(job.type as any) || job.type }}
               applied={applied}
               onOpen={() => setSelectedJob(job)}
               onApply={() => onCreateMatch(job)}
               onChat={() => onStartChat(job.employerId!, job.requester, `https://api.dicebear.com/7.x/bottts/svg?seed=${job.requester}`, job.id)}
+              t={t}
             />
           );
         })}
 
         {filtered.length === 0 && (
           <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "3rem 1rem", background: "var(--surface)", border: "1px dashed var(--line)", borderRadius: "12px" }}>
-            <p style={{ color: "var(--muted)", margin: 0 }}>Nenhuma vaga encontrada com os filtros atuais.</p>
+            <p style={{ color: "var(--muted)", margin: 0 }}>{t("noJobsFound")}</p>
           </div>
         )}
       </div>
@@ -307,6 +375,7 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
           onClose={() => setSelectedJob(null)}
           onApply={() => { onCreateMatch(selectedJob); setSelectedJob(null); }}
           onChat={() => { onStartChat(selectedJob.employerId!, selectedJob.requester, `https://api.dicebear.com/7.x/bottts/svg?seed=${selectedJob.requester}`, selectedJob.id); setSelectedJob(null); }}
+          t={t}
         />
       )}
     </section>
@@ -315,13 +384,14 @@ export function JobsPage({ needs, matches, onCreateMatch, onStartChat, user }: J
 
 /* ─── Job Card ─────────────────────────────────────────────────────────────── */
 
-function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
+function JobCard({ job, meta, applied, onOpen, onApply, onChat, t }: {
   job: Opportunity;
   meta: { label: string; emoji: string; gradient: string };
   applied: boolean;
   onOpen: () => void;
   onApply: () => void;
   onChat: () => void;
+  t: (key: TranslationKey) => string;
 }) {
   return (
     <article
@@ -362,7 +432,7 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
 
         {applied && (
           <span style={{ position: "absolute", bottom: "0.6rem", right: "0.75rem", background: "rgba(16,185,129,0.85)", color: "#fff", fontSize: "0.7rem", fontWeight: "700", padding: "0.2rem 0.5rem", borderRadius: "6px" }}>
-            Candidatado
+            {t("applied")}
           </span>
         )}
       </div>
@@ -412,7 +482,7 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
         <div style={{ display: "flex", gap: "0.6rem", marginTop: "auto", paddingTop: "0.5rem" }} onClick={(e) => e.stopPropagation()}>
           {applied ? (
             <button disabled style={{ flex: 1, padding: "0.6rem", borderRadius: "10px", border: "1px solid rgba(16,185,129,0.3)", background: "rgba(16,185,129,0.08)", color: "#10b981", fontSize: "0.82rem", fontWeight: "700", cursor: "default" }}>
-              Candidatado ✓
+              {t("appliedCheck")}
             </button>
           ) : (
             <button
@@ -421,7 +491,7 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
               onMouseEnter={(e) => e.currentTarget.style.opacity = "0.85"}
               onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
             >
-              Candidatar
+              {t("apply")}
             </button>
           )}
           <button
@@ -431,7 +501,7 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
             onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
           >
             <MessageSquare size={14} />
-            Contactar
+            {t("contact")}
           </button>
         </div>
       </div>
@@ -441,14 +511,15 @@ function JobCard({ job, meta, applied, onOpen, onApply, onChat }: {
 
 /* ─── Detail Drawer ─────────────────────────────────────────────────────────── */
 
-function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
+function JobDetailDrawer({ job, applied, onClose, onApply, onChat, t }: {
   job: Opportunity;
   applied: boolean;
   onClose: () => void;
   onApply: () => void;
   onChat: () => void;
+  t: (key: TranslationKey) => string;
 }) {
-  const meta = CATEGORY_META[job.type] ?? { label: job.type, emoji: "💼", gradient: "linear-gradient(135deg, #6366f1, #4f46e5)" };
+  const meta = CATEGORY_META[job.type] ?? { emoji: "💼", gradient: "linear-gradient(135deg, #6366f1, #4f46e5)" };
 
   return (
     <div
@@ -477,10 +548,10 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
           <div style={{ position: "absolute", bottom: "1rem", left: "1rem", display: "flex", gap: "0.5rem" }}>
             <span style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", color: "#fff", fontSize: "0.75rem", fontWeight: "600", padding: "0.3rem 0.65rem", borderRadius: "8px", display: "flex", alignItems: "center", gap: "0.3rem" }}>
               <MapPin size={12} />
-              {job.distance} km de si
+              {job.distance} km {t("distanceFromYou")}
             </span>
             <span style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(6px)", color: "#fff", fontSize: "0.75rem", padding: "0.3rem 0.65rem", borderRadius: "8px" }}>
-              {meta.label}
+              {t(job.type as any) || job.type}
             </span>
           </div>
         </div>
@@ -503,9 +574,9 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
           {/* Stats */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "0.75rem" }}>
             {[
-              { label: "Pagamento", value: `€${job.pay}/h`, color: "#a5b4fc" },
-              { label: "Duração", value: `${job.hours}h`, color: "var(--ink)" },
-              { label: "Avaliação", value: `★ ${job.rating.toFixed(1)}`, color: "#facc15" },
+              { label: t("jobPayment"), value: `€${job.pay}/h`, color: "#a5b4fc" },
+              { label: t("jobDuration"), value: `${job.hours}h`, color: "var(--ink)" },
+              { label: t("jobRating"), value: `★ ${job.rating.toFixed(1)}`, color: "#facc15" },
             ].map((stat) => (
               <div key={stat.label} style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.75rem", textAlign: "center" }}>
                 <small style={{ color: "var(--muted)", display: "block", fontSize: "0.7rem", marginBottom: "0.2rem" }}>{stat.label}</small>
@@ -518,16 +589,16 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
           <div style={{ display: "flex", alignItems: "flex-start", gap: "0.6rem", background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.9rem" }}>
             <MapPin size={16} style={{ color: "#6366f1", flexShrink: 0, marginTop: "2px" }} />
             <div>
-              <small style={{ color: "var(--muted)", display: "block", fontSize: "0.72rem" }}>Morada</small>
+              <small style={{ color: "var(--muted)", display: "block", fontSize: "0.72rem" }}>{t("jobAddress")}</small>
               <span style={{ color: "var(--ink)", fontSize: "0.9rem" }}>{job.address || job.city}</span>
               <br />
-              <small style={{ color: "var(--muted)", fontSize: "0.75rem" }}>a {job.distance} km de si · início às {job.time}</small>
+              <small style={{ color: "var(--muted)", fontSize: "0.75rem" }}>{t("distanceFromYou")} {job.distance} km · {t("startTime")} {job.time}</small>
             </div>
           </div>
 
           {/* Description */}
           <div>
-            <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>Descrição da Vaga</h4>
+            <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>{t("jobDescription")}</h4>
             <p style={{ margin: 0, color: "var(--ink)", fontSize: "0.9rem", lineHeight: "1.65", background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.9rem", whiteSpace: "pre-wrap" }}>
               {job.description}
             </p>
@@ -537,7 +608,7 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginTop: "auto", paddingTop: "0.5rem" }}>
             {applied ? (
               <button disabled style={{ width: "100%", padding: "0.9rem", borderRadius: "12px", border: "1px solid rgba(16,185,129,0.3)", background: "rgba(16,185,129,0.08)", color: "#10b981", fontWeight: "700", fontSize: "1rem" }}>
-                Candidatura Efetuada ✓
+                {t("applicationDone")}
               </button>
             ) : (
               <button
@@ -546,7 +617,7 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
                 onMouseEnter={(e) => e.currentTarget.style.opacity = "0.88"}
                 onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
               >
-                Candidatar-me a Esta Vaga
+                {t("applyToJob")}
               </button>
             )}
             <button
@@ -556,7 +627,7 @@ function JobDetailDrawer({ job, applied, onClose, onApply, onChat }: {
               onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
             >
               <MessageSquare size={18} />
-              Enviar Mensagem ao Empregador
+              {t("sendMessage")}
             </button>
           </div>
         </div>

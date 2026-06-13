@@ -42,7 +42,7 @@ export function WalletPage({ t }: WalletPageProps) {
       {/* Header */}
       <div style={{ marginBottom: "2rem" }}>
         <p style={{ color: "var(--yellow)", letterSpacing: "1px", textTransform: "uppercase", fontSize: "0.75rem", fontWeight: "700", margin: "0 0 0.4rem" }}>
-          Carteira Digital
+          {t("digitalWallet")}
         </p>
         <h2 style={{ fontSize: "1.75rem", fontWeight: "700", color: "var(--ink)", margin: 0 }}>
           {t("walletTitle")}
@@ -50,7 +50,7 @@ export function WalletPage({ t }: WalletPageProps) {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: "center", color: "var(--muted)", padding: "3rem" }}>A carregar carteira...</div>
+        <div style={{ textAlign: "center", color: "var(--muted)", padding: "3rem" }}>{t("walletLoading")}</div>
       ) : (
         <>
           {/* Balance cards */}
@@ -75,7 +75,7 @@ export function WalletPage({ t }: WalletPageProps) {
               {
                 icon: <TrendingUp size={18} />,
                 label: t("nextPayout"),
-                value: escrow > 0 ? "Pendente" : "—",
+                value: escrow > 0 ? t("pendingPayout") : "—",
                 color: "#4a90e2",
                 bg: "rgba(74,144,226,0.1)",
                 border: "rgba(74,144,226,0.2)",
@@ -96,7 +96,7 @@ export function WalletPage({ t }: WalletPageProps) {
           {escrow > 0 && (
             <div style={{ marginBottom: "1rem", padding: "0.8rem 1rem", borderRadius: "12px", background: "rgba(255,210,51,0.08)", border: "1px solid rgba(255,210,51,0.2)", display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--yellow-dark)", fontSize: "0.85rem", fontWeight: "600" }}>
               <Clock size={15} />
-              €{escrow.toFixed(2)} em garantia — aguarda confirmação do empreendedor após conclusão do trabalho.
+              €{escrow.toFixed(2)} {t("escrowNotice")}
             </div>
           )}
 
@@ -104,12 +104,12 @@ export function WalletPage({ t }: WalletPageProps) {
           <div style={{ border: "1px solid var(--line)", borderRadius: "16px", background: "var(--surface)", overflow: "hidden" }}>
             <div style={{ padding: "1rem 1.25rem", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: "0.5rem" }}>
               <ArrowDownLeft size={15} style={{ color: "#22c97a" }} />
-              <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "700", color: "var(--ink)" }}>Transações</h3>
+              <h3 style={{ margin: 0, fontSize: "0.9rem", fontWeight: "700", color: "var(--ink)" }}>{t("transactions")}</h3>
             </div>
 
             {transactions.length === 0 ? (
               <div style={{ padding: "2.5rem 1.5rem", textAlign: "center", color: "var(--muted)", fontSize: "0.87rem" }}>
-                Ainda sem transações. Complete trabalhos para ver os ganhos aqui.
+                {t("noTransactions")}
               </div>
             ) : (
               <div>
@@ -138,7 +138,7 @@ export function WalletPage({ t }: WalletPageProps) {
                         {tx.status === "released" ? "+" : "⏸"} € {tx.amount.toFixed(2)}
                       </strong>
                       <small style={{ display: "block", fontSize: "0.7rem", marginTop: "2px", color: tx.status === "released" ? "rgba(34,201,122,0.7)" : "rgba(255,210,51,0.8)" }}>
-                        {tx.status === "released" ? "Pago" : "Em garantia"}
+                        {tx.status === "released" ? t("txPaid") : t("txEscrowed")}
                       </small>
                     </div>
                   </div>
@@ -148,7 +148,7 @@ export function WalletPage({ t }: WalletPageProps) {
           </div>
 
           <p style={{ textAlign: "center", color: "var(--muted)", fontSize: "0.78rem", marginTop: "1.5rem", opacity: 0.6 }}>
-            Demo · Os pagamentos são simulados para fins de demonstração
+            {t("walletDemoNote")}
           </p>
         </>
       )}

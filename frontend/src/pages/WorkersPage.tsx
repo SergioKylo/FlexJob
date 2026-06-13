@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Star, MessageSquare, Search, MapPin, X, Clock, Briefcase } from "lucide-react";
 import type { Opportunity, MatchRecord, User } from "../types";
+import type { TranslationKey } from "../i18n/translations";
 import { api } from "../utils/api";
+import { formatDays } from "../utils/weekdays";
 import { JobProposalModal } from "../components/JobProposalModal";
 
 type WorkersPageProps = {
   workers: Opportunity[];
-  t: (key: any) => string;
+  t: (key: TranslationKey) => string;
   user: User;
   employerJobs: MatchRecord[];
   onStartChat: (partnerId: number, partnerName: string, partnerAvatar?: string, jobId?: number) => void;
@@ -20,18 +22,9 @@ type Review = {
   created_at: string;
 };
 
-const CATEGORIES = [
-  { value: "all",         label: "Todos" },
-  { value: "restauracao", label: "🍽️ Restauração" },
-  { value: "eventos",     label: "🎪 Eventos" },
-  { value: "logistica",   label: "📦 Logística" },
-  { value: "casa",        label: "🏠 Casa" },
-  { value: "retalho",     label: "🛍️ Retalho" },
-];
-
 type SortKey = "rating" | "pay" | "distance";
 
-export function WorkersPage({ workers, user, employerJobs, onStartChat }: WorkersPageProps) {
+export function WorkersPage({ workers, user, employerJobs, onStartChat, t }: WorkersPageProps) {
   const [searchTerm, setSearchTerm]             = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [sortBy, setSortBy]                     = useState<SortKey>("rating");
@@ -47,6 +40,21 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
       .then((data) => { setReviews(data); setLoadingReviews(false); })
       .catch(() => setLoadingReviews(false));
   }, [selectedWorker]);
+
+  const CATEGORIES = [
+    { value: "all",         label: t("all") },
+    { value: "restauracao", label: `🍽️ ${t("restauracao")}` },
+    { value: "eventos",     label: `🎪 ${t("eventos")}` },
+    { value: "logistica",   label: `📦 ${t("logistica")}` },
+    { value: "casa",        label: `🏠 ${t("casa")}` },
+    { value: "retalho",     label: `🛍️ ${t("retalho")}` },
+  ];
+
+  const SORT_LABELS: Record<SortKey, string> = {
+    rating: t("sortRatingLabel"),
+    pay: t("sortTariffLabel"),
+    distance: t("sortDistanceLabel"),
+  };
 
   const filtered = workers
     .filter((w) => {
@@ -67,13 +75,13 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
       {/* Header */}
       <div style={{ marginBottom: "2rem" }}>
         <p style={{ color: "#6366f1", letterSpacing: "1px", textTransform: "uppercase", fontSize: "0.75rem", fontWeight: "600", margin: "0 0 0.4rem" }}>
-          Empreendedores
+          {t("forEmployers")}
         </p>
         <h2 style={{ fontSize: "1.75rem", fontWeight: "700", color: "var(--ink)", margin: "0 0 0.5rem" }}>
-          Trabalhadores Disponíveis
+          {t("availableWorkers")}
         </h2>
         <p style={{ color: "var(--muted)", margin: 0, fontSize: "0.9rem" }}>
-          {filtered.length} trabalhador{filtered.length !== 1 ? "es" : ""} disponíve{filtered.length !== 1 ? "is" : "l"} na sua área · ordenados por {sortBy === "rating" ? "avaliação" : sortBy === "pay" ? "tarifa" : "distância"}
+          {filtered.length} {filtered.length !== 1 ? t("workersFound_other") : t("workersFound_one")} · {t("sortedByLabel")} {SORT_LABELS[sortBy].toLowerCase()}
         </p>
       </div>
 
@@ -84,7 +92,7 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
           <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
           <input
             type="text"
-            placeholder="Pesquisar por nome ou especialidade..."
+            placeholder={t("workerSearchPlaceholder")}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: "100%", padding: "0.7rem 0.75rem 0.7rem 2.4rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.9rem", outline: "none", boxSizing: "border-box" }}
@@ -117,7 +125,6 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
 
           <div style={{ display: "flex", gap: "0.4rem" }}>
             {(["rating", "pay", "distance"] as SortKey[]).map((key) => {
-              const labels: Record<SortKey, string> = { rating: "Avaliação", pay: "Tarifa", distance: "Distância" };
               const active = sortBy === key;
               return (
                 <button
@@ -134,7 +141,7 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
                     fontWeight: active ? "600" : "400",
                   }}
                 >
-                  {labels[key]}
+                  {SORT_LABELS[key]}
                 </button>
               );
             })}
@@ -150,12 +157,13 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
             worker={worker}
             onOpen={() => setSelectedWorker(worker)}
             onChat={() => onStartChat(worker.id, worker.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${worker.title}`, undefined)}
+            t={t}
           />
         ))}
 
         {filtered.length === 0 && (
           <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: "3rem", background: "var(--surface)", border: "1px dashed var(--line)", borderRadius: "12px" }}>
-            <p style={{ color: "var(--muted)", margin: 0 }}>Nenhum trabalhador disponível com os filtros atuais.</p>
+            <p style={{ color: "var(--muted)", margin: 0 }}>{t("noWorkersFound")}</p>
           </div>
         )}
       </div>
@@ -172,6 +180,7 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
             setSelectedWorker(null);
           }}
           onOpenProposal={() => setShowProposalModal(true)}
+          t={t}
         />
       )}
 
@@ -195,10 +204,11 @@ export function WorkersPage({ workers, user, employerJobs, onStartChat }: Worker
 
 /* ─── Worker Card ────────────────────────────────────────────────────────────── */
 
-function WorkerCard({ worker, onOpen, onChat }: {
+function WorkerCard({ worker, onOpen, onChat, t }: {
   worker: Opportunity;
   onOpen: () => void;
   onChat: () => void;
+  t: (key: TranslationKey) => string;
 }) {
   return (
     <article
@@ -240,7 +250,7 @@ function WorkerCard({ worker, onOpen, onChat }: {
           </div>
         </div>
         <span style={{ position: "absolute", top: "0.75rem", right: "0.75rem", background: "rgba(16,185,129,0.15)", color: "#10b981", fontSize: "0.68rem", fontWeight: "700", padding: "0.2rem 0.5rem", borderRadius: "6px", border: "1px solid rgba(16,185,129,0.3)" }}>
-          Disponível
+          {t("workerAvailableBadge")}
         </span>
       </div>
 
@@ -261,6 +271,9 @@ function WorkerCard({ worker, onOpen, onChat }: {
             €{worker.pay}/h
           </span>
         </div>
+        <div style={{ fontSize: "0.78rem", color: "var(--muted)" }}>
+          📅 {formatDays(worker.days)}
+        </div>
 
         {/* Buttons */}
         <div style={{ display: "flex", gap: "0.6rem", marginTop: "auto" }} onClick={(e) => e.stopPropagation()}>
@@ -277,7 +290,7 @@ function WorkerCard({ worker, onOpen, onChat }: {
             onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
           >
             <MessageSquare size={14} />
-            Contactar
+            {t("contact")}
           </button>
           <button
             onClick={onOpen}
@@ -290,7 +303,7 @@ function WorkerCard({ worker, onOpen, onChat }: {
             onMouseEnter={(e) => e.currentTarget.style.opacity = "0.75"}
             onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
           >
-            Ver perfil
+            {t("viewProfile")}
           </button>
         </div>
       </div>
@@ -300,13 +313,14 @@ function WorkerCard({ worker, onOpen, onChat }: {
 
 /* ─── Worker Detail Drawer ───────────────────────────────────────────────────── */
 
-function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat, onOpenProposal }: {
+function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat, onOpenProposal, t }: {
   worker: Opportunity;
   reviews: Review[];
   loadingReviews: boolean;
   onClose: () => void;
   onChat: (jobId?: number) => void;
   onOpenProposal: () => void;
+  t: (key: TranslationKey) => string;
 }) {
 
   return (
@@ -337,7 +351,7 @@ function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat, 
             <strong>{worker.rating.toFixed(1)}</strong>
           </div>
           <p style={{ margin: "0.4rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-            Disponível a {worker.distance} km de si
+            {t("workerAvailableBadge")} · {worker.distance} km {t("distanceFromYou")}
           </p>
         </div>
 
@@ -346,8 +360,9 @@ function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat, 
           {/* Stats */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
             {[
-              { label: "Tarifa", value: `€${worker.pay}/h`, color: "#a5b4fc" },
-              { label: "Horário", value: worker.time, color: "var(--ink)" },
+              { label: t("workerRate"), value: `€${worker.pay}/h`, color: "#a5b4fc" },
+              { label: t("workerSchedule"), value: worker.time, color: "var(--ink)" },
+              { label: t("workerAvailableDays"), value: formatDays(worker.days), color: "var(--ink)" },
             ].map((s) => (
               <div key={s.label} style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.75rem", textAlign: "center" }}>
                 <small style={{ color: "var(--muted)", display: "block", fontSize: "0.7rem", marginBottom: "0.2rem" }}>{s.label}</small>
@@ -358,7 +373,7 @@ function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat, 
 
           {/* Bio */}
           <div>
-            <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>Bio / Perfil</h4>
+            <h4 style={{ margin: "0 0 0.5rem", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>{t("workerBio")}</h4>
             <p style={{ margin: 0, color: "var(--ink)", fontSize: "0.9rem", lineHeight: "1.6", background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "10px", padding: "0.9rem" }}>
               {worker.description}
             </p>
@@ -379,7 +394,7 @@ function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat, 
               onMouseLeave={(e) => e.currentTarget.style.opacity = "1"}
             >
               <MessageSquare size={16} />
-              Enviar Mensagem
+              {t("sendMessageBtn")}
             </button>
 
             {/* Propose job button */}
@@ -397,20 +412,20 @@ function WorkerDetailDrawer({ worker, reviews, loadingReviews, onClose, onChat, 
               onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(251,191,36,0.08)"; }}
             >
               <Briefcase size={16} />
-              Propor Vaga de Trabalho
+              {t("proposeJob")}
             </button>
           </div>
 
           {/* Reviews */}
           <div>
             <h4 style={{ margin: "0 0 0.75rem", fontSize: "0.72rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>
-              Avaliações Recentes
+              {t("recentReviews")}
             </h4>
             {loadingReviews ? (
-              <p style={{ color: "var(--muted)", fontSize: "0.87rem" }}>A carregar avaliações...</p>
+              <p style={{ color: "var(--muted)", fontSize: "0.87rem" }}>{t("loadingReviews")}</p>
             ) : reviews.length === 0 ? (
               <p style={{ color: "var(--muted)", fontSize: "0.87rem", fontStyle: "italic" }}>
-                Ainda sem avaliações de outros empreendedores.
+                {t("noReviews")}
               </p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>

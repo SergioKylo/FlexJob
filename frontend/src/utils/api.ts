@@ -140,6 +140,7 @@ export const api = {
       pay: w.hourlyRate,
       time: w.startTime && w.endTime ? `${w.startTime} - ${w.endTime}` : "Sempre disponível",
       hours: w.radius,
+      days: w.days || "",
       rating: w.rating || 5.0,
       distance: lat !== undefined && lng !== undefined ? parseFloat(calculateDistance(lat, lng, w.lat, w.lng).toFixed(1)) : 0,
       description: w.bio || "Sem bio disponível.",
@@ -176,11 +177,26 @@ export const api = {
     hourlyRate: number;
     isActive: boolean;
     category?: string;
+    days?: string;
   }): Promise<{ message: string }> {
     return request<{ message: string }>("/api/workers/availability", {
       method: "POST",
       body: availability as any,
     });
+  },
+
+  async getMyAvailability(): Promise<{
+    lat: number;
+    lng: number;
+    radius: number;
+    startTime: string;
+    endTime: string;
+    hourlyRate: number;
+    isActive: boolean;
+    category: string;
+    days: string;
+  }> {
+    return request<any>("/api/workers/availability/me");
   },
 
   async getReviews(userId: number): Promise<any[]> {

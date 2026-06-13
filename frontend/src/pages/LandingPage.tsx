@@ -50,7 +50,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
         onLogin(loggedInUser);
       }
     } catch (err: any) {
-      setError(err.message || "Ocorreu um erro. Verifique os seus dados.");
+      setError(err.message || t("errorCheckData"));
     } finally {
       setLoading(false);
     }
@@ -67,7 +67,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
       const loggedInUser = await api.login(demoEmail, demoPassword);
       onLogin(loggedInUser);
     } catch (err: any) {
-      setError(err.message || "Ocorreu um erro. Verifique os seus dados.");
+      setError(err.message || t("errorCheckData"));
     } finally {
       setLoading(false);
     }
@@ -91,7 +91,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
       <main className="landing-main">
         {/* Copy */}
         <section className="landing-copy">
-          <p className="eyebrow">Portugal · Trabalho temporário</p>
+          <p className="eyebrow">Portugal · {language === "pt" ? "Trabalho temporário" : "Temporary work"}</p>
           <h1>{t("heroTitle")}</h1>
           <p className="landing-text">{t("heroText")}</p>
 
@@ -103,10 +103,10 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
           {/* Stats */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.75rem", marginTop: "2rem", maxWidth: "400px" }}>
             {[
-              { value: "+5.000", label: "Utilizadores em Portugal" },
-              { value: "100%",   label: "Geolocalizado no Mapa" },
-              { value: "7 min",  label: "Média para Match" },
-              { value: "4.9 ★",  label: "Satisfação Geral" },
+              { value: "+5.000", label: t("statUsers") },
+              { value: "100%",   label: t("statGeolocated") },
+              { value: "7 min",  label: t("statMatchTime") },
+              { value: "4.9 ★",  label: t("statSatisfaction") },
             ].map((s) => (
               <div key={s.label} style={{ padding: "1rem", border: "1px solid var(--line)", borderRadius: "14px", background: "var(--surface2)" }}>
                 <strong style={{ fontSize: "1.3rem", display: "block", color: "var(--ink)" }}>{s.value}</strong>
@@ -138,10 +138,10 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
               <>
                 <label className="form-row">
                   <span>{t("name")}</span>
-                  <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="O seu nome completo" />
+                  <input value={name} onChange={(e) => setName(e.target.value)} required placeholder={t("namePlaceholder")} />
                 </label>
                 <label className="form-row">
-                  <span>Região de Portugal</span>
+                  <span>{t("regionPortugal")}</span>
                   <select value={region} onChange={(e) => setRegion(e.target.value)}>
                     {REGIONS.map((r) => (
                       <option key={r.name} value={r.name}>{r.name}</option>
@@ -153,7 +153,7 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
 
             <label className="form-row">
               <span>{t("email")}</span>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="email@exemplo.com" />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder={t("emailPlaceholder")} />
             </label>
 
             <label className="form-row">
@@ -166,26 +166,26 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
                 <div className="role-grid" style={{ margin: "0.5rem 0" }}>
                   <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
                     <input type="radio" checked={role === "worker"} onChange={() => setRole("worker")} style={{ accentColor: "#ffd233" }} />
-                    💼 Trabalhador
+                    💼 {t("roleworker")}
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
                     <input type="radio" checked={role === "employer"} onChange={() => setRole("employer")} style={{ accentColor: "#ffd233" }} />
-                    🏢 Empreendedor
+                    🏢 {t("roleEmployer")}
                   </label>
                 </div>
                 <label className="form-row">
-                  <span>{role === "worker" ? "Sobre mim / Bio" : "Descrição da empresa"}</span>
+                  <span>{role === "worker" ? t("bioWorkerLabel") : t("bioEmployerLabel")}</span>
                   <textarea
                     value={bio}
                     onChange={(e) => setBio(e.target.value)}
-                    placeholder={role === "worker" ? "Ex: Experiente em restauração e eventos, disponível imediatamente..." : "Ex: Café familiar no centro de Lisboa, procuramos profissionais de atendimento..."}
+                    placeholder={role === "worker" ? t("bioWorkerPlaceholder") : t("bioEmployerPlaceholder")}
                     rows={2}
                     style={{ resize: "vertical", fontFamily: "inherit", fontSize: "0.9rem" }}
                   />
                 </label>
                 {role === "worker" && (
                   <label className="form-row">
-                    <span>Taxa horária (€/h)</span>
+                    <span>{t("hourlyRateLabel")}</span>
                     <input
                       type="number"
                       min={5}
@@ -200,20 +200,20 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
             )}
 
             <button className="primary full" type="submit" disabled={loading}>
-              {loading ? "A entrar..." : t("enterApp")}
+              {loading ? t("loggingIn") : t("enterApp")}
             </button>
             <p className="auth-note" style={{ textAlign: "center", marginTop: "0.25rem" }}>{t("localDemo")}</p>
 
             {/* Demo accounts */}
             <div style={{ marginTop: "0.75rem", padding: "0.75rem", background: "rgba(255,210,51,0.07)", border: "1px solid rgba(255,210,51,0.2)", borderRadius: "10px" }}>
               <p style={{ margin: "0 0 0.5rem", fontSize: "0.7rem", fontWeight: "700", color: "var(--yellow-dark)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Contas de demonstração (senha: 123456)
+                {t("demoAccountsTitle")}
               </p>
               <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem" }}>
                   {[
-                    { label: "💼 Trabalhadora", email: "ines@email.com" },
-                    { label: "🏢 Empregador",   email: "cafeaurora@email.com" },
+                    { label: `💼 ${t("demoWorker")}`, email: "ines@email.com" },
+                    { label: `🏢 ${t("demoEmployer")}`, email: "cafeaurora@email.com" },
                   ].map((acc) => (
                     <button
                       key={acc.email}

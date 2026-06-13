@@ -1,8 +1,10 @@
+import { toast } from "../utils/toast";
 import { useEffect, useRef, useState } from "react";
 import { Send, X, MessageCircle, Briefcase, CheckCircle, XCircle } from "lucide-react";
 import { api } from "../utils/api";
 import { JobProposalModal } from "./JobProposalModal";
 import type { ChatMessage, User } from "../types";
+import type { TranslationKey } from "../i18n/translations";
 
 interface ChatModalProps {
   partnerId: number;
@@ -11,6 +13,7 @@ interface ChatModalProps {
   jobId?: number;
   onClose: () => void;
   currentUser: User;
+  t?: (key: TranslationKey) => string;
 }
 
 export function ChatModal({
@@ -20,7 +23,9 @@ export function ChatModal({
   jobId,
   onClose,
   currentUser,
+  t: tProp,
 }: ChatModalProps) {
+  const t = tProp ?? ((key: string) => key);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -67,7 +72,7 @@ export function ChatModal({
       const data = await api.getMessages(partnerId, jobId);
       setMessages(data);
     } catch (err: any) {
-      alert(err?.message || "Erro ao responder à proposta.");
+      toast.error(err?.message || "Error responding to proposal.");
     } finally {
       setRespondingJob(null);
     }
@@ -87,7 +92,7 @@ export function ChatModal({
       setMessages(data);
     } catch (err) {
       console.error("Error sending message:", err);
-      alert("Não foi possível enviar a mensagem.");
+      toast.error("Could not send message.");
     }
   }
 
@@ -103,11 +108,11 @@ export function ChatModal({
             <div>
               <h3 className="chat-partner-name">{partnerName}</h3>
               <p className="chat-status-indicator">
-                <span className="online-dot"></span> Online
+                <span className="online-dot"></span> {t("chatOnline")}
               </p>
             </div>
           </div>
-          <button className="chat-close-button reset-button" onClick={onClose} aria-label="Fechar Chat">
+          <button className="chat-close-button reset-button" onClick={onClose} aria-label={t("chatCloseBtnLabel")}>
             <X size={20} />
           </button>
         </header>
@@ -116,12 +121,12 @@ export function ChatModal({
         <main className="chat-messages-container">
           {loading && messages.length === 0 ? (
             <div className="chat-messages-loading">
-              <span className="spinner"></span> A carregar mensagens...
+              <span className="spinner"></span> {t("chatLoadingMessages")}
             </div>
           ) : messages.length === 0 ? (
             <div className="chat-no-messages">
               <MessageCircle size={48} className="chat-empty-icon" />
-              <p>Inicie a conversa! Envie uma mensagem para {partnerName}.</p>
+              <p>{t("chatStartConversation")} {partnerName}.</p>
             </div>
           ) : (
             <div className="chat-message-list">
@@ -134,7 +139,9 @@ export function ChatModal({
                 if (msg.messageType === "job_proposal") {
                   let proposal: any = null;
                   try { proposal = JSON.parse(msg.content); } catch { /* ignore */ }
-                  const canRespond = isWorker && !isMe && !respondedJobIds.has(proposal?.jobId ?? 0);
+                  // Responded in this session or (after refresh/reopen) per the job's real status
+                  const alreadyResponded = respondedJobIds.has(proposal?.jobId ?? 0) || (!!msg.jobStatus && msg.jobStatus !== "proposed");
+                  const canRespond = isWorker && !isMe && !alreadyResponded;
                   const isResponding = respondingJob === proposal?.jobId;
                   return (
                     <div key={msg.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
@@ -142,7 +149,7 @@ export function ChatModal({
                         {/* Card header */}
                         <div style={{ padding: "10px 14px 8px", background: "rgba(255,210,51,0.1)", borderBottom: "1px solid rgba(255,210,51,0.2)", display: "flex", alignItems: "center", gap: "8px" }}>
                           <Briefcase size={15} style={{ color: "var(--yellow)", flexShrink: 0 }} />
-                          <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--yellow)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Proposta de Trabalho</span>
+                          <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--yellow)", textTransform: "uppercase", letterSpacing: "0.5px" }}>{t("chatProposalTitle")}</span>
                         </div>
                         {/* Card body */}
                         {proposal ? (
@@ -158,17 +165,17 @@ export function ChatModal({
                               <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
                                 <button onClick={() => handleRespondProposal(proposal.jobId, true)} disabled={isResponding}
                                   style={{ flex: 1, padding: "8px", borderRadius: "10px", border: "none", background: "var(--green)", color: "#fff", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", opacity: isResponding ? 0.55 : 1 }}>
-                                  <CheckCircle size={14} /> Aceitar
+                                  <CheckCircle size={14} /> {t("chatAccept")}
                                 </button>
                                 <button onClick={() => handleRespondProposal(proposal.jobId, false)} disabled={isResponding}
                                   style={{ flex: 1, padding: "8px", borderRadius: "10px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--muted)", fontWeight: 700, fontSize: "13px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "5px", opacity: isResponding ? 0.55 : 1 }}>
-                                  <XCircle size={14} /> Recusar
+                                  <XCircle size={14} /> {t("chatReject")}
                                 </button>
                               </div>
                             )}
-                            {isMe && <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--muted)", textAlign: "right" }}>Aguarda resposta do trabalhador...</p>}
-                            {!isMe && !canRespond && respondedJobIds.has(proposal?.jobId ?? 0) && (
-                              <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--muted)", fontStyle: "italic" }}>✓ Já respondeste a esta proposta</p>
+                            {isMe && <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--muted)", textAlign: "right" }}>{t("chatWaitingWorker")}</p>}
+                            {!isMe && !canRespond && alreadyResponded && (
+                              <p style={{ margin: "4px 0 0", fontSize: "11px", color: "var(--muted)", fontStyle: "italic" }}>{t("chatProposalResponded")}</p>
                             )}
                           </div>
                         ) : (
@@ -189,7 +196,7 @@ export function ChatModal({
                       {isMe ? (
                         // Worker: waiting for payment
                         <div style={{ padding: "6px 14px", borderRadius: "10px", background: "rgba(255,210,51,0.1)", border: "1px solid rgba(255,210,51,0.3)", maxWidth: "85%", textAlign: "center" }}>
-                          <p style={{ margin: 0, fontSize: "12px", color: "#f59e0b", fontWeight: 600 }}>⏳ Proposta aceite — a aguardar pagamento de {msg.toName}</p>
+                          <p style={{ margin: 0, fontSize: "12px", color: "#f59e0b", fontWeight: 600 }}>{t("chatProposalAccepted").replace("{name}", msg.toName ?? "")}</p>
                           <span style={{ fontSize: "10px", color: "var(--muted)", opacity: 0.7 }}>{formattedTime}</span>
                         </div>
                       ) : (
@@ -237,7 +244,7 @@ export function ChatModal({
         <footer className="chat-modal-footer">
           <form onSubmit={handleSend} className="chat-input-form">
             {currentUser.role === "employer" && (
-              <button type="button" onClick={() => setShowProposal(true)} className="chat-propose-button" title="Propor Trabalho">
+              <button type="button" onClick={() => setShowProposal(true)} className="chat-propose-button" title={t("proposeJob")}>
                 <Briefcase size={17} />
               </button>
             )}
@@ -245,7 +252,7 @@ export function ChatModal({
               type="text"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
-              placeholder="Escreva uma mensagem..."
+              placeholder={t("chatMessagePlaceholder")}
               className="chat-text-input"
               autoFocus
             />

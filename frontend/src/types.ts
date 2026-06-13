@@ -21,6 +21,8 @@ export type User = {
   walletBalance?: number;
   lat?: number;
   lng?: number;
+  warningCount?: number; // admin warnings; 3 = banned account
+  banned?: boolean;
 };
 
 export type Opportunity = {
@@ -32,6 +34,7 @@ export type Opportunity = {
   pay: number;
   time: string;
   hours: number;
+  days?: string; // worker availability weekdays, comma-separated ("mon,tue"); empty = every day
   rating: number;
   distance: number;
   description: string;
@@ -70,6 +73,7 @@ export type ChatMessage = {
   toName: string;
   content: string;
   messageType?: string;
+  jobStatus?: string; // status of the linked job (lets proposal cards survive refresh)
   createdAt: string;
 };
 
@@ -81,5 +85,6 @@ export type InboxConversation = {
   partnerAvatar: string;
   partnerRole: string;
   lastMessage: string;
+  lastFromUserId?: number;
   lastMessageTime: string;
 };

@@ -1,3 +1,4 @@
+import { toast } from "../utils/toast";
 import { useEffect, useRef, useState } from "react";
 import { Star, MapPin, Briefcase, User, Clock, CreditCard, Edit2, X, Check, Camera } from "lucide-react";
 import type { User as UserType } from "../types";
@@ -5,7 +6,7 @@ import type { TranslationKey } from "../i18n/translations";
 import { api } from "../utils/api";
 
 type ProfilePageProps = {
-  t: (key: TranslationKey) => string;
+  t?: (key: TranslationKey) => string;
   user: UserType;
   onUserUpdate?: (updated: Partial<UserType>) => void;
 };
@@ -32,12 +33,7 @@ function nearestRegion(lat?: number, lng?: number): string {
   return best.name;
 }
 
-const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  open:      { label: "Aberta",    color: "#22c97a", bg: "rgba(34,201,122,0.1)"  },
-  accepted:  { label: "Em curso",  color: "#6366f1", bg: "rgba(99,102,241,0.1)"  },
-  completed: { label: "Concluída", color: "#f59e0b", bg: "rgba(245,158,11,0.1)"  },
-  closed:    { label: "Fechada",   color: "var(--muted)", bg: "var(--surface2)" },
-};
+// Status labels are resolved dynamically using t() inside the component
 
 type EditJobForm = {
   title: string;
@@ -48,7 +44,8 @@ type EditJobForm = {
   address: string;
 };
 
-export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
+export function ProfilePage({ user, onUserUpdate, t: tProp }: ProfilePageProps) {
+  const t = tProp ?? ((key: string) => key);
   const isWorker = user.role === "worker";
   const region = nearestRegion(user.lat, user.lng);
   const rating = user.rating ?? 5.0;
@@ -93,7 +90,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
         const result = await api.updateProfile(user.name, user.bio ?? "", base64);
         onUserUpdate?.({ avatar: result.avatar });
       } catch {
-        alert("Erro ao guardar avatar.");
+        toast.error(t("errorSavingAvatar"));
       } finally {
         setSavingAvatar(false);
       }
@@ -105,13 +102,24 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
     const r = REGIONS.find((x) => x.name === selectedRegion) ?? REGIONS[0];
     setSavingRegion(true);
     try {
-      await api.updateAvailability({ lat: r.lat, lng: r.lng, radius: 10, startTime: "09:00", endTime: "18:00", hourlyRate: 10, isActive: true, category: selectedCategory });
+      // Preserve the worker's saved settings — only the location (and category) changes here
+      const current = await api.getMyAvailability().catch(() => null);
+      await api.updateAvailability({
+        lat: r.lat, lng: r.lng,
+        radius: current?.radius ?? 10,
+        startTime: current?.startTime || "09:00",
+        endTime: current?.endTime || "18:00",
+        hourlyRate: current?.hourlyRate ?? 10,
+        isActive: current?.isActive ?? true,
+        category: selectedCategory,
+        days: current?.days ?? "",
+      });
       onUserUpdate?.({ lat: r.lat, lng: r.lng });
       setRegionSaved(true);
       setEditRegion(false);
       setTimeout(() => setRegionSaved(false), 3000);
     } catch {
-      alert("Erro ao guardar região.");
+      toast.error(t("errorSavingRegion"));
     } finally {
       setSavingRegion(false);
     }
@@ -123,7 +131,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
       await api.closeJob(jobId);
       setMyJobs((prev) => prev.map((j) => j.id === jobId ? { ...j, status: "closed" } : j));
     } catch {
-      alert("Erro ao fechar vaga.");
+      toast.error(t("errorClosingJob"));
     } finally {
       setClosingId(null);
     }
@@ -148,13 +156,20 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
       setMyJobs((prev) => prev.map((j) => j.id === jobId ? { ...j, ...editJobForm } : j));
       setEditingJobId(null);
     } catch (err: any) {
-      alert(err.message || "Erro ao guardar vaga.");
+      toast.error(err.message || t("errorSavingJob"));
     } finally {
       setSavingJob(false);
     }
   }
 
-  const roleLabel  = isWorker ? "Trabalhador" : "Empreendedor";
+  const STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
+    open:      { label: t("statusOpen"),      color: "#22c97a", bg: "rgba(34,201,122,0.1)"  },
+    accepted:  { label: t("statusAccepted"),  color: "#6366f1", bg: "rgba(99,102,241,0.1)"  },
+    completed: { label: t("statusCompleted"), color: "#f59e0b", bg: "rgba(245,158,11,0.1)"  },
+    closed:    { label: t("statusClosed"),    color: "var(--muted)", bg: "var(--surface2)" },
+  };
+
+  const roleLabel  = isWorker ? t("workerRole") : t("employerRole");
   const roleColor  = isWorker ? "#10b981" : "#f59e0b";
   const roleBg     = isWorker ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)";
   const roleBorder = isWorker ? "rgba(16,185,129,0.3)"  : "rgba(245,158,11,0.3)";
@@ -166,6 +181,20 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
 
   return (
     <section style={{ padding: "2rem", maxWidth: "700px", margin: "0 auto" }}>
+
+      {/* Admin warnings banner — only the user themself sees this */}
+      {(user.warningCount ?? 0) > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "0.6rem",
+          padding: "0.85rem 1.1rem", marginBottom: "1.5rem", borderRadius: "12px",
+          background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.45)",
+        }}>
+          <span style={{ fontSize: "1.1rem" }}>⚠️</span>
+          <p style={{ margin: 0, fontSize: "0.86rem", fontWeight: "700", color: "#ef4444" }}>
+            {t("adminWarningsBanner").replace("{count}", String(user.warningCount ?? 0))}
+          </p>
+        </div>
+      )}
 
       {/* Profile card */}
       <div style={{
@@ -194,7 +223,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={savingAvatar}
-            title="Alterar avatar"
+            title={t("changeAvatar")}
             style={{
               position: "absolute", bottom: 0, right: 0,
               width: "26px", height: "26px", borderRadius: "50%",
@@ -231,10 +260,10 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
             </span>
             <span style={{ color: "#facc15", display: "flex", alignItems: "center", gap: "0.3rem" }}>
               <Star size={13} fill="#facc15" />
-              {rating.toFixed(1)} avaliação média
+              {rating.toFixed(1)} {t("avgRatingLabel")}
             </span>
           </div>
-          {savingAvatar && <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "#6366f1" }}>A guardar avatar...</p>}
+          {savingAvatar && <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "#6366f1" }}>{t("savingAvatar")}</p>}
         </div>
       </div>
 
@@ -242,14 +271,14 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem", marginBottom: "1.5rem" }}>
         {(isWorker
           ? [
-              { icon: <Briefcase size={18} />, label: "Tarefas concluídas", value: completedJobs.length > 0 ? String(completedJobs.length) : "–" },
-              { icon: <Clock size={18} />,     label: "Em curso",            value: inProgressJobs.length > 0 ? String(inProgressJobs.length) : "–" },
-              { icon: <Star size={18} />,      label: "Avaliação média",     value: `${rating.toFixed(1)} ★` },
+              { icon: <Briefcase size={18} />, label: t("tasksCompleted"), value: completedJobs.length > 0 ? String(completedJobs.length) : "–" },
+              { icon: <Clock size={18} />,     label: t("inProgress"),     value: inProgressJobs.length > 0 ? String(inProgressJobs.length) : "–" },
+              { icon: <Star size={18} />,      label: t("avgRating"),      value: `${rating.toFixed(1)} ★` },
             ]
           : [
-              { icon: <Briefcase size={18} />, label: "Vagas publicadas",  value: String(myJobs.length || "–") },
-              { icon: <User size={18} />,      label: "Vagas ativas",      value: String(activeJobs.length || "–") },
-              { icon: <Star size={18} />,      label: "Avaliação média",   value: `${rating.toFixed(1)} ★` },
+              { icon: <Briefcase size={18} />, label: t("jobsPublished"), value: String(myJobs.length || "–") },
+              { icon: <User size={18} />,      label: t("activeJobs"),    value: String(activeJobs.length || "–") },
+              { icon: <Star size={18} />,      label: t("avgRating"),     value: `${rating.toFixed(1)} ★` },
             ]
         ).map((stat) => (
           <div key={stat.label} style={{ background: "var(--surface2)", border: "1px solid var(--line)", borderRadius: "14px", padding: "1.1rem", textAlign: "center" }}>
@@ -262,19 +291,19 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
 
       {/* Details section */}
       <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1.5rem" }}>
-        <InfoCard title={isWorker ? "Sobre mim" : "Sobre a empresa"} icon={<User size={15} />}>
+        <InfoCard title={isWorker ? t("aboutMe") : t("aboutCompany")} icon={<User size={15} />}>
           {user.bio && user.bio.trim()
             ? user.bio
             : isWorker
-              ? "Sem bio definida."
-              : `Empreendedor registado em ${region}.`
+              ? t("noBio")
+              : `${t("employerRole")} — ${region}.`
           }
         </InfoCard>
 
         {isWorker ? (
           <>
-            <InfoCard title="Disponibilidade" icon={<Clock size={15} />}>
-              Disponível para trabalhos de curta duração. Raio de ação: 10 km a partir de {region}.
+            <InfoCard title={t("availabilitySection")} icon={<Clock size={15} />}>
+              {t("availabilityText")} {region}.
             </InfoCard>
 
             {/* Worker job history */}
@@ -283,7 +312,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                 <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.75rem" }}>
                   <Briefcase size={15} style={{ color: "#6366f1" }} />
                   <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>
-                    Histórico de Tarefas ({myJobs.length})
+                    {t("taskHistory")} ({myJobs.length})
                   </h4>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.45rem" }}>
@@ -319,16 +348,16 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: editRegion ? "0.75rem" : 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
                   <MapPin size={15} style={{ color: "#6366f1" }} />
-                  <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>Região de trabalho</h4>
+                  <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>{t("workRegion")}</h4>
                 </div>
                 <button onClick={() => setEditRegion((v) => !v)}
                   style={{ display: "flex", alignItems: "center", gap: "0.3rem", background: "none", border: "none", color: "#6366f1", cursor: "pointer", fontSize: "0.78rem", fontWeight: "600" }}>
                   <Edit2 size={12} />
-                  {editRegion ? "Cancelar" : "Mudar região"}
+                  {editRegion ? t("cancelRegion") : t("changeRegion")}
                 </button>
               </div>
               {!editRegion && (
-                <p style={{ margin: 0, fontSize: "0.88rem", color: "var(--ink)", lineHeight: "1.55" }}>{region} · Raio de ação: 10 km</p>
+                <p style={{ margin: 0, fontSize: "0.88rem", color: "var(--ink)", lineHeight: "1.55" }}>{region} · {t("radiusText")}</p>
               )}
               {editRegion && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
@@ -338,25 +367,25 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                   </select>
                   <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}
                     style={{ padding: "0.5rem 0.75rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.9rem" }}>
-                    <option value="restauracao">🍽️ Restauração</option>
-                    <option value="eventos">🎉 Eventos</option>
-                    <option value="logistica">📦 Logística</option>
-                    <option value="casa">🏠 Casa & Limpeza</option>
-                    <option value="retalho">🛍️ Retalho</option>
+                    <option value="restauracao">🍽️ {t("restauracao")}</option>
+                    <option value="eventos">🎉 {t("eventos")}</option>
+                    <option value="logistica">📦 {t("logistica")}</option>
+                    <option value="casa">🏠 {t("casa")}</option>
+                    <option value="retalho">🛍️ {t("retalho")}</option>
                   </select>
                   <button onClick={handleSaveRegion} disabled={savingRegion}
                     style={{ padding: "0.5rem 1rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", fontWeight: "700", cursor: "pointer", fontSize: "0.85rem", opacity: savingRegion ? 0.6 : 1 }}>
-                    {savingRegion ? "A guardar..." : "Guardar região"}
+                    {savingRegion ? t("savingRegion") : t("saveRegion")}
                   </button>
-                  {regionSaved && <p style={{ margin: 0, fontSize: "0.78rem", color: "#22c97a", fontWeight: "600" }}>✓ Região atualizada!</p>}
+                  {regionSaved && <p style={{ margin: 0, fontSize: "0.78rem", color: "#22c97a", fontWeight: "600" }}>{t("regionSaved")}</p>}
                 </div>
               )}
             </div>
           </>
         ) : (
           <>
-            <InfoCard title="Região de atuação" icon={<MapPin size={15} />}>
-              {region} · Publica vagas para trabalhos de curta duração, eventos e apoio pontual.
+            <InfoCard title={t("operatingRegion")} icon={<MapPin size={15} />}>
+              {region} · {t("operatingRegionText")}
             </InfoCard>
 
             {/* Employer jobs */}
@@ -364,14 +393,14 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
               <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.75rem" }}>
                 <Briefcase size={15} style={{ color: "#6366f1" }} />
                 <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>
-                  Vagas Ativas ({activeJobs.length})
+                  {t("activeVacancies")} ({activeJobs.length})
                 </h4>
               </div>
 
               {myJobs.length === 0 ? (
-                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>Ainda não publicou nenhuma vaga.</p>
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>{t("noJobsPublished")}</p>
               ) : activeJobs.length === 0 ? (
-                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>Sem vagas ativas de momento.</p>
+                <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>{t("noActiveJobs")}</p>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                   {activeJobs.map((job) => {
@@ -393,7 +422,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                             <div style={{ display: "flex", gap: "0.75rem", fontSize: "0.75rem", color: "var(--muted)" }}>
                               <span>€{job.pay}/h</span>
                               {job.workDate && <span>📅 {job.workDate}</span>}
-                              {job.applicationsCount > 0 && <span>👥 {job.applicationsCount} candidatura{job.applicationsCount !== 1 ? "s" : ""}</span>}
+                              {job.applicationsCount > 0 && <span>👥 {job.applicationsCount} {job.applicationsCount !== 1 ? t("applicationsBadge_plural") : t("applicationsBadge")}</span>}
                             </div>
                           </div>
                           <div style={{ display: "flex", gap: "0.4rem", flexShrink: 0 }}>
@@ -403,7 +432,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                                 style={{ display: "flex", alignItems: "center", gap: "0.25rem", padding: "0.3rem 0.6rem", borderRadius: "7px", border: "1px solid var(--line)", background: isEditing ? "var(--surface)" : "var(--surface)", color: "#6366f1", fontSize: "0.73rem", fontWeight: "700", cursor: "pointer" }}
                               >
                                 <Edit2 size={11} />
-                                {isEditing ? "Cancelar" : "Editar"}
+                                {isEditing ? t("cancelEdit") : t("editJob")}
                               </button>
                             )}
                             {job.status === "open" && (
@@ -413,7 +442,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                                 style={{ display: "flex", alignItems: "center", gap: "0.25rem", padding: "0.3rem 0.6rem", borderRadius: "7px", border: "1px solid rgba(240,96,96,0.35)", background: "rgba(240,96,96,0.08)", color: "#f06060", fontSize: "0.73rem", fontWeight: "700", cursor: "pointer", opacity: closingId === job.id ? 0.5 : 1 }}
                               >
                                 <X size={11} />
-                                Fechar
+                                {t("closeJob")}
                               </button>
                             )}
                           </div>
@@ -424,12 +453,12 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                           <div style={{ padding: "0.75rem 0.9rem", borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: "0.55rem", background: "var(--surface)" }}>
                             <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "0.4rem" }}>
                               <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Título</span>
+                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("jobTitleFieldLabel")}</span>
                                 <input value={editJobForm.title} onChange={(e) => setEditJobForm((f) => ({ ...f, title: e.target.value }))}
                                   style={{ padding: "0.45rem 0.65rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }} />
                               </label>
                               <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Descrição</span>
+                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("jobDescriptionLabel")}</span>
                                 <textarea value={editJobForm.description} onChange={(e) => setEditJobForm((f) => ({ ...f, description: e.target.value }))} rows={2}
                                   style={{ padding: "0.45rem 0.65rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.85rem", resize: "vertical", fontFamily: "inherit" }} />
                               </label>
@@ -441,25 +470,25 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                                   style={{ padding: "0.45rem 0.65rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }} />
                               </label>
                               <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Duração</span>
+                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("jobDurationField")}</span>
                                 <input value={editJobForm.duration} onChange={(e) => setEditJobForm((f) => ({ ...f, duration: e.target.value }))}
                                   style={{ padding: "0.45rem 0.65rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }} />
                               </label>
                               <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Dia</span>
+                                <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("jobDayField")}</span>
                                 <input type="date" value={editJobForm.workDate} onChange={(e) => setEditJobForm((f) => ({ ...f, workDate: e.target.value }))}
                                   style={{ padding: "0.45rem 0.65rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.85rem" }} />
                               </label>
                             </div>
                             <label style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                              <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>Morada</span>
+                              <span style={{ fontSize: "0.7rem", fontWeight: "600", color: "var(--muted)", textTransform: "uppercase" }}>{t("jobAddressField")}</span>
                               <input value={editJobForm.address} onChange={(e) => setEditJobForm((f) => ({ ...f, address: e.target.value }))}
                                 style={{ padding: "0.45rem 0.65rem", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--surface2)", color: "var(--ink)", fontSize: "0.88rem" }} />
                             </label>
                             <button onClick={() => handleSaveJob(job.id)} disabled={savingJob}
                               style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.4rem", padding: "0.5rem", borderRadius: "8px", border: "none", background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", fontWeight: "700", fontSize: "0.85rem", cursor: "pointer", opacity: savingJob ? 0.6 : 1 }}>
                               <Check size={14} />
-                              {savingJob ? "A guardar..." : "Guardar alterações"}
+                              {savingJob ? t("savingJob") : t("saveJobChanges")}
                             </button>
                           </div>
                         )}
@@ -474,7 +503,7 @@ export function ProfilePage({ user, onUserUpdate }: ProfilePageProps) {
                 <>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", margin: "1rem 0 0.6rem" }}>
                     <h4 style={{ margin: 0, fontSize: "0.75rem", textTransform: "uppercase", letterSpacing: "1px", color: "var(--muted)" }}>
-                      Histórico ({pastJobs.length})
+                      {t("jobHistory")} ({pastJobs.length})
                     </h4>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: "0.4rem" }}>

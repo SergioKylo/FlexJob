@@ -1,8 +1,9 @@
+import { toast } from "../utils/toast";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Users, Briefcase, MessageSquare, TrendingUp,
   Trash2, XCircle, Search, BarChart3, RefreshCw,
-  LogOut, Star,
+  LogOut, Star, AlertTriangle, ArrowLeft,
 } from "lucide-react";
 import { api } from "../utils/api";
 
@@ -15,6 +16,7 @@ type AdminStats = {
 type AdminUser = {
   id: number; name: string; email: string; role: string;
   avatar?: string; bio?: string; rating: number; walletBalance: number; createdAt: string;
+  warningCount?: number; banned?: boolean;
 };
 type AdminJob = {
   id: number; title: string; description: string; category: string; address: string;
@@ -106,6 +108,50 @@ function fmt(d: string) {
   catch { return d; }
 }
 
+// ── Warning badge ─────────────────────────────────────────────────────────────
+
+function WarningBadge({ count, banned }: { count: number; banned: boolean }) {
+  if (banned) {
+    return (
+      <span style={{
+        padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 800,
+        background: "rgba(239,68,68,0.18)", color: "#ef4444", whiteSpace: "nowrap",
+        border: "1px solid rgba(239,68,68,0.35)",
+      }}>BANIDO</span>
+    );
+  }
+  if (count === 0) return null;
+  const color = count >= 3 ? "#ef4444" : "#f59e0b";
+  return (
+    <span style={{
+      padding: "2px 8px", borderRadius: 20, fontSize: 11, fontWeight: 700,
+      background: color + "20", color, whiteSpace: "nowrap",
+      border: `1px solid ${color}40`,
+    }}>⚠ {count}/3</span>
+  );
+}
+
+// ── Helper: send message with isWarning flag (bypasses api.ts to add isWarning) ──
+
+async function adminSendMessageRaw(
+  toUserId: number,
+  content: string,
+  isWarning: boolean,
+): Promise<{ message: string; warningCount?: number; banned?: boolean }> {
+  const res = await fetch("/api/admin/send-message", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ toUserId, content, isWarning }),
+  });
+  if (!res.ok) {
+    let msg = "Erro ao enviar mensagem.";
+    try { const d = await res.json(); msg = d.message || msg; } catch { /* ignore */ }
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export function AdminPage({ onLogout }: { onLogout: () => void }) {
@@ -136,7 +182,31 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
   const [warnInput, setWarnInput]         = useState("");
   const [sendingWarn, setSendingWarn]     = useState(false);
 
+  // User conversation panel (users tab) ───────────────────────────────────────
+  const [userPanelTarget, setUserPanelTarget]     = useState<AdminUser | null>(null);
+  const [userPanelMsgs, setUserPanelMsgs]         = useState<AdminConvMsg[]>([]);
+  const [loadingUserPanel, setLoadingUserPanel]   = useState(false);
+  const [userPanelInput, setUserPanelInput]       = useState("");
+  const [sendingUserPanel, setSendingUserPanel]   = useState(false);
+  const [adminId, setAdminId]                     = useState<number | null>(null);
+
   useEffect(() => { loadAll(false); }, []);
+
+  // Fetch admin id once (needed to load admin ↔ user conversation)
+  useEffect(() => {
+    api.me().then((me) => { if (me.id) setAdminId(me.id); }).catch(() => {});
+  }, []);
+
+  // Load messages for user panel whenever target changes
+  useEffect(() => {
+    if (!userPanelTarget || !adminId) { setUserPanelMsgs([]); return; }
+    setLoadingUserPanel(true);
+    const user1Id = Math.min(adminId, userPanelTarget.id);
+    const user2Id = Math.max(adminId, userPanelTarget.id);
+    api.admin.getConversationMessages(user1Id, user2Id)
+      .then((data) => { setUserPanelMsgs(data); setLoadingUserPanel(false); })
+      .catch(() => setLoadingUserPanel(false));
+  }, [userPanelTarget, adminId]);
 
   function loadConversations() {
     setConvError(null);
@@ -183,7 +253,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       await api.admin.deleteUser(id);
       setUsers((p) => p.filter((u) => u.id !== id));
       if (stats) setStats({ ...stats, userCount: stats.userCount - 1 });
-    } catch (e: any) { alert(e.message || "Erro ao eliminar."); }
+    } catch (e: any) { toast.error(e.message || "Erro ao eliminar."); }
     finally { setDeletingUser(null); }
   }
 
@@ -194,7 +264,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       await api.admin.deleteJob(id);
       setJobs((p) => p.filter((j) => j.id !== id));
       if (stats) setStats({ ...stats, totalJobs: stats.totalJobs - 1 });
-    } catch (e: any) { alert(e.message || "Erro ao eliminar."); }
+    } catch (e: any) { toast.error(e.message || "Erro ao eliminar."); }
     finally { setDeletingJob(null); }
   }
 
@@ -204,25 +274,84 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       await api.admin.closeJob(id);
       setJobs((p) => p.map((j) => j.id === id ? { ...j, status: "closed" } : j));
       if (stats) setStats({ ...stats, activeJobs: Math.max(0, stats.activeJobs - 1) });
-    } catch (e: any) { alert(e.message || "Erro ao fechar."); }
+    } catch (e: any) { toast.error(e.message || "Erro ao fechar."); }
     finally { setClosingJob(null); }
   }
 
+  // ── Old messages-tab send warning (kept for messages tab) ─────────────────
   async function handleSendWarning(toUserId: number) {
     if (!warnInput.trim() || !selectedConv) return;
     setSendingWarn(true);
     try {
-      await api.admin.sendMessage(toUserId, warnInput.trim());
+      await adminSendMessageRaw(toUserId, warnInput.trim(), true);
       setWarnInput("");
-      // Refresh messages in this conversation
       const data = await api.admin.getConversationMessages(
         selectedConv.user1Id, selectedConv.user2Id, selectedConv.jobId ?? undefined
       );
       setConvMessages(data);
     } catch (err: any) {
-      alert(err?.message || "Erro ao enviar aviso.");
+      toast.error(err?.message || "Erro ao enviar aviso.");
     } finally {
       setSendingWarn(false);
+    }
+  }
+
+  // ── User panel: open conversation panel for a specific user ───────────────
+  function openUserPanel(u: AdminUser) {
+    setUserPanelTarget(u);
+    setUserPanelInput("");
+    setUserPanelMsgs([]);
+  }
+
+  // ── User panel: send normal message ───────────────────────────────────────
+  async function handleUserPanelSend(isWarning: boolean) {
+    if (!userPanelInput.trim() || !userPanelTarget || !adminId) return;
+
+    if (isWarning) {
+      const warnCount = (userPanelTarget.warningCount ?? 0) + 1;
+      const confirmMsg = `Enviar aviso formal a "${userPanelTarget.name}"?\n\nEste aviso contará como ${warnCount}/3.${warnCount >= 3 ? "\n\nAO 3.º AVISO A CONTA SERÁ BANIDA!" : ""}`;
+      if (!confirm(confirmMsg)) return;
+    }
+
+    setSendingUserPanel(true);
+    try {
+      const result = await adminSendMessageRaw(userPanelTarget.id, userPanelInput.trim(), isWarning);
+      setUserPanelInput("");
+
+      // Update user state (warningCount + banned)
+      if (isWarning && result.warningCount !== undefined) {
+        const newCount = result.warningCount;
+        const newBanned = result.banned ?? false;
+        setUsers((prev) =>
+          prev.map((u) =>
+            u.id === userPanelTarget.id
+              ? { ...u, warningCount: newCount, banned: newBanned }
+              : u,
+          ),
+        );
+        setUserPanelTarget((prev) =>
+          prev ? { ...prev, warningCount: newCount, banned: newBanned } : prev,
+        );
+        if (newBanned) {
+          toast.error("Utilizador banido após 3 avisos.");
+        } else {
+          toast.info(`Aviso enviado. Contador: ${newCount}/3`);
+        }
+      } else if (!isWarning) {
+        toast.success("Mensagem enviada.");
+      }
+
+      // Reload conversation messages
+      if (adminId) {
+        const u1 = Math.min(adminId, userPanelTarget.id);
+        const u2 = Math.max(adminId, userPanelTarget.id);
+        const data = await api.admin.getConversationMessages(u1, u2);
+        setUserPanelMsgs(data);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao enviar mensagem.");
+    } finally {
+      setSendingUserPanel(false);
     }
   }
 
@@ -298,7 +427,7 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
       }}>
         {TABS.map((t) => (
           <button key={t.key}
-            onClick={() => { setTab(t.key); setSearch(""); }}
+            onClick={() => { setTab(t.key); setSearch(""); setUserPanelTarget(null); }}
             style={{
               padding: "13px 16px", border: "none", background: "none", cursor: "pointer",
               fontSize: 13, fontWeight: 600, whiteSpace: "nowrap",
@@ -387,71 +516,285 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
         {/* ════════════════════════════════ USERS ═════════════════════════ */}
         {tab === "users" && (
           <>
-            {/* Toolbar */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
-              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
-                Utilizadores <span style={{ color: "var(--muted)", fontWeight: 400 }}>({filteredUsers.length})</span>
-              </h2>
-              <div style={{ display: "flex", gap: 8 }}>
-                <div style={{ position: "relative" }}>
-                  <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
-                  <input type="text" placeholder="Nome ou email…" value={search} onChange={(e) => setSearch(e.target.value)}
-                    style={{ padding: "8px 12px 8px 30px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, width: 200 }} />
-                </div>
-                <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
-                  style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, cursor: "pointer" }}>
-                  <option value="all">Todos</option>
-                  <option value="worker">Trabalhadores</option>
-                  <option value="employer">Empregadores</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, overflow: "auto" }}>
-              {/* Header row */}
-              <div style={{
-                display: "grid", gridTemplateColumns: "44px 1fr 180px 120px 70px 80px 110px 44px",
-                padding: "9px 16px", borderBottom: "1px solid var(--line)",
-                fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", gap: 10, minWidth: 700,
-              }}>
-                <span></span><span>Nome</span><span>Email</span><span>Função</span>
-                <span>Rating</span><span>Saldo</span><span>Criado</span><span></span>
-              </div>
-
-              {filteredUsers.length === 0 && (
-                <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Nenhum utilizador encontrado.</div>
-              )}
-
-              {filteredUsers.map((u, i) => (
-                <div key={u.id} style={{
-                  display: "grid", gridTemplateColumns: "44px 1fr 180px 120px 70px 80px 110px 44px",
-                  padding: "11px 16px", alignItems: "center", gap: 10, minWidth: 700,
-                  borderTop: i > 0 ? "1px solid var(--line)" : "none",
-                  opacity: u.role === "admin" ? 0.55 : 1,
+            {/* ── User conversation panel ───────────────────────────────── */}
+            {userPanelTarget ? (
+              <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 220px)", minHeight: 480 }}>
+                {/* Panel header */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  marginBottom: 14, flexWrap: "wrap",
                 }}>
-                  <Avatar src={u.avatar} name={u.name} size={32} />
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
-                    {u.bio && <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{u.bio}</div>}
+                  <button
+                    onClick={() => setUserPanelTarget(null)}
+                    style={{
+                      border: "1px solid var(--line)", background: "var(--surface2)",
+                      borderRadius: 8, padding: "6px 12px", cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6,
+                      color: "var(--muted)", fontSize: 13, fontWeight: 600,
+                    }}
+                  >
+                    <ArrowLeft size={14} /> Voltar
+                  </button>
+                  <Avatar src={userPanelTarget.avatar} name={userPanelTarget.name} size={36} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {userPanelTarget.name}
+                      <Badge label={ROLE_LABEL[userPanelTarget.role] || userPanelTarget.role} color={ROLE_COLOR[userPanelTarget.role] || "#6b7280"} />
+                      <WarningBadge count={userPanelTarget.warningCount ?? 0} banned={userPanelTarget.banned ?? false} />
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--muted)" }}>{userPanelTarget.email}</div>
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--muted)" }}>{u.email}</div>
-                  <Badge label={ROLE_LABEL[u.role] || u.role} color={ROLE_COLOR[u.role] || "#6b7280"} />
-                  <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 600 }}>★ {u.rating.toFixed(1)}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>€{u.walletBalance.toFixed(0)}</span>
-                  <span style={{ fontSize: 12, color: "var(--muted)" }}>{fmt(u.createdAt)}</span>
-                  <div>
-                    {u.role !== "admin" && (
-                      <button onClick={() => deleteUser(u.id, u.name)} disabled={deletingUser === u.id}
-                        title="Eliminar utilizador"
-                        style={{ border: "none", background: "none", cursor: "pointer", padding: 4, borderRadius: 6,
-                          color: deletingUser === u.id ? "var(--muted)" : "#ef4444", opacity: deletingUser === u.id ? 0.5 : 1 }}>
-                        <Trash2 size={15} />
+                  {/* Warning counter in header */}
+                  {!userPanelTarget.banned && (
+                    <div style={{
+                      padding: "6px 14px", borderRadius: 10,
+                      background: (userPanelTarget.warningCount ?? 0) >= 2 ? "rgba(239,68,68,0.1)" : "rgba(245,158,11,0.1)",
+                      border: `1px solid ${(userPanelTarget.warningCount ?? 0) >= 2 ? "rgba(239,68,68,0.3)" : "rgba(245,158,11,0.3)"}`,
+                      fontSize: 13, fontWeight: 700,
+                      color: (userPanelTarget.warningCount ?? 0) >= 2 ? "#ef4444" : "#f59e0b",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                      <AlertTriangle size={14} />
+                      Avisos: {userPanelTarget.warningCount ?? 0}/3
+                    </div>
+                  )}
+                  {userPanelTarget.banned && (
+                    <div style={{
+                      padding: "6px 14px", borderRadius: 10,
+                      background: "rgba(239,68,68,0.15)",
+                      border: "1px solid rgba(239,68,68,0.4)",
+                      fontSize: 13, fontWeight: 800, color: "#ef4444",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                      CONTA BANIDA
+                    </div>
+                  )}
+                </div>
+
+                {/* Message thread */}
+                <div style={{
+                  flex: 1, background: "var(--surface)", border: "1px solid var(--line)",
+                  borderRadius: 14, display: "flex", flexDirection: "column", overflow: "hidden",
+                }}>
+                  {/* Messages area */}
+                  <div style={{ flex: 1, overflowY: "auto", padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                    {loadingUserPanel ? (
+                      <div style={{ textAlign: "center", color: "var(--muted)", paddingTop: 40 }}>A carregar mensagens...</div>
+                    ) : userPanelMsgs.length === 0 ? (
+                      <div style={{ textAlign: "center", color: "var(--muted)", paddingTop: 40 }}>
+                        <AlertTriangle size={32} style={{ opacity: 0.2, marginBottom: 8 }} />
+                        <p style={{ margin: 0, fontSize: 14 }}>Sem mensagens ainda. Envie um aviso ou mensagem abaixo.</p>
+                      </div>
+                    ) : userPanelMsgs.map((msg) => {
+                      const isFromAdmin = adminId !== null && msg.fromUserId === adminId;
+
+                      // Admin warning — red highlighted card
+                      if (msg.messageType === "admin_warning") {
+                        return (
+                          <div key={msg.id} style={{
+                            border: "1.5px solid rgba(239,68,68,0.5)",
+                            borderRadius: 12,
+                            background: "rgba(239,68,68,0.07)",
+                            padding: "10px 14px",
+                          }}>
+                            <div style={{
+                              fontSize: 11, fontWeight: 800, color: "#ef4444",
+                              marginBottom: 6, display: "flex", alignItems: "center", gap: 5,
+                              textTransform: "uppercase", letterSpacing: 0.5,
+                            }}>
+                              <AlertTriangle size={13} /> AVISO DA ADMINISTRAÇÃO
+                            </div>
+                            <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5 }}>{msg.content}</div>
+                            <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "right", marginTop: 4 }}>
+                              {msg.fromName} · {new Date(msg.createdAt).toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // System events
+                      if (msg.messageType !== "text") {
+                        const color = msg.messageType === "payment_escrow" || msg.messageType === "payment_released" ? "#22c97a" : msg.messageType === "application" ? "#8b5cf6" : "#6366f1";
+                        return (
+                          <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
+                            <div style={{ padding: "6px 14px", borderRadius: 10, background: color + "18", border: `1px solid ${color}44`, maxWidth: "80%" }}>
+                              <span style={{ fontSize: 12, color, fontWeight: 600 }}>{msg.fromName}: </span>
+                              <span style={{ fontSize: 12, color: "var(--ink)" }}>{msg.content}</span>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // Normal text message
+                      return (
+                        <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: isFromAdmin ? "flex-end" : "flex-start" }}>
+                          <span style={{ fontSize: 10, color: "var(--muted)", marginBottom: 2, paddingLeft: 4, paddingRight: 4 }}>{msg.fromName}</span>
+                          <div style={{
+                            maxWidth: "72%", padding: "8px 12px",
+                            borderRadius: isFromAdmin ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
+                            background: isFromAdmin ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "var(--surface2)",
+                            color: isFromAdmin ? "#fff" : "var(--ink)",
+                            border: isFromAdmin ? "none" : "1px solid var(--line)",
+                          }}>
+                            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.4, wordBreak: "break-word" }}>{msg.content}</p>
+                            <span style={{ display: "block", fontSize: 10, opacity: 0.55, marginTop: 3, textAlign: "right" }}>
+                              {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Compose area */}
+                  <div style={{
+                    padding: "12px 14px", borderTop: "1px solid var(--line)",
+                    background: "var(--surface)", flexShrink: 0,
+                  }}>
+                    <textarea
+                      value={userPanelInput}
+                      onChange={(e) => setUserPanelInput(e.target.value)}
+                      placeholder="Escreva uma mensagem ou aviso..."
+                      rows={2}
+                      style={{
+                        width: "100%", borderRadius: 8, border: "1px solid var(--line)",
+                        background: "var(--bg)", color: "var(--ink)", fontSize: 13,
+                        padding: "7px 10px", resize: "none", fontFamily: "inherit",
+                        outline: "none", boxSizing: "border-box", marginBottom: 8,
+                      }}
+                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      {/* Normal message button */}
+                      <button
+                        onClick={() => handleUserPanelSend(false)}
+                        disabled={!userPanelInput.trim() || sendingUserPanel || (userPanelTarget.banned ?? false)}
+                        style={{
+                          flex: 1, padding: "8px 12px", borderRadius: 8,
+                          border: "1px solid var(--line)", cursor: "pointer",
+                          background: "var(--surface2)", color: "var(--ink)",
+                          fontSize: 13, fontWeight: 600,
+                          opacity: !userPanelInput.trim() || sendingUserPanel || (userPanelTarget.banned ?? false) ? 0.45 : 1,
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                        }}
+                      >
+                        <MessageSquare size={14} /> Enviar mensagem
                       </button>
+                      {/* Formal warning button */}
+                      <button
+                        onClick={() => handleUserPanelSend(true)}
+                        disabled={!userPanelInput.trim() || sendingUserPanel || (userPanelTarget.banned ?? false)}
+                        title="Envia aviso formal — conta para o limite de 3 antes do ban"
+                        style={{
+                          flex: 1, padding: "8px 12px", borderRadius: 8,
+                          border: "2px solid #ef4444", cursor: "pointer",
+                          background: "rgba(239,68,68,0.1)", color: "#ef4444",
+                          fontSize: 13, fontWeight: 800,
+                          opacity: !userPanelInput.trim() || sendingUserPanel || (userPanelTarget.banned ?? false) ? 0.45 : 1,
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                        }}
+                      >
+                        <AlertTriangle size={14} /> Enviar aviso formal (conta +1)
+                      </button>
+                    </div>
+                    {(userPanelTarget.banned ?? false) && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#ef4444", fontWeight: 700, textAlign: "center" }}>
+                        Esta conta está banida — não é possível enviar mais mensagens.
+                      </div>
                     )}
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <>
+                {/* ── Normal users list ──────────────────────────────────── */}
+                {/* Toolbar */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, flexWrap: "wrap", gap: 10 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+                    Utilizadores <span style={{ color: "var(--muted)", fontWeight: 400 }}>({filteredUsers.length})</span>
+                  </h2>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ position: "relative" }}>
+                      <Search size={13} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }} />
+                      <input type="text" placeholder="Nome ou email…" value={search} onChange={(e) => setSearch(e.target.value)}
+                        style={{ padding: "8px 12px 8px 30px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, width: 200 }} />
+                    </div>
+                    <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
+                      style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--ink)", fontSize: 13, cursor: "pointer" }}>
+                      <option value="all">Todos</option>
+                      <option value="worker">Trabalhadores</option>
+                      <option value="employer">Empregadores</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, overflow: "auto" }}>
+                  {/* Header row */}
+                  <div style={{
+                    display: "grid", gridTemplateColumns: "44px 1fr 180px 120px 70px 80px 110px auto 44px",
+                    padding: "9px 16px", borderBottom: "1px solid var(--line)",
+                    fontSize: 11, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", gap: 10, minWidth: 780,
+                  }}>
+                    <span></span><span>Nome</span><span>Email</span><span>Função</span>
+                    <span>Rating</span><span>Saldo</span><span>Criado</span><span>Avisos</span><span></span>
+                  </div>
+
+                  {filteredUsers.length === 0 && (
+                    <div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>Nenhum utilizador encontrado.</div>
+                  )}
+
+                  {filteredUsers.map((u, i) => (
+                    <div key={u.id} style={{
+                      display: "grid", gridTemplateColumns: "44px 1fr 180px 120px 70px 80px 110px auto 44px",
+                      padding: "11px 16px", alignItems: "center", gap: 10, minWidth: 780,
+                      borderTop: i > 0 ? "1px solid var(--line)" : "none",
+                      opacity: u.role === "admin" ? 0.55 : 1,
+                    }}>
+                      <Avatar src={u.avatar} name={u.name} size={32} />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
+                        {u.bio && <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{u.bio}</div>}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--muted)" }}>{u.email}</div>
+                      <Badge label={ROLE_LABEL[u.role] || u.role} color={ROLE_COLOR[u.role] || "#6b7280"} />
+                      <span style={{ color: "#f59e0b", fontSize: 13, fontWeight: 600 }}>★ {u.rating.toFixed(1)}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>€{u.walletBalance.toFixed(0)}</span>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>{fmt(u.createdAt)}</span>
+                      {/* Warning badges */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "nowrap" }}>
+                        {u.role !== "admin" && (
+                          <WarningBadge count={u.warningCount ?? 0} banned={u.banned ?? false} />
+                        )}
+                        {u.role !== "admin" && (
+                          <button
+                            onClick={() => openUserPanel(u)}
+                            title="Abrir conversa / enviar aviso"
+                            style={{
+                              border: "1px solid rgba(239,68,68,0.4)",
+                              background: "rgba(239,68,68,0.08)",
+                              cursor: "pointer", padding: "3px 8px", borderRadius: 6,
+                              color: "#ef4444", fontSize: 11, fontWeight: 700,
+                              display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap",
+                            }}
+                          >
+                            <AlertTriangle size={11} /> Avisar
+                          </button>
+                        )}
+                      </div>
+                      <div>
+                        {u.role !== "admin" && (
+                          <button onClick={() => deleteUser(u.id, u.name)} disabled={deletingUser === u.id}
+                            title="Eliminar utilizador"
+                            style={{ border: "none", background: "none", cursor: "pointer", padding: 4, borderRadius: 6,
+                              color: deletingUser === u.id ? "var(--muted)" : "#ef4444", opacity: deletingUser === u.id ? 0.5 : 1 }}>
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
 
@@ -665,16 +1008,25 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
                       ) : convMessages.map((msg) => {
                         const isUser1 = msg.fromUserId === selectedConv.user1Id;
 
-                        // Admin warning — centred amber banner
+                        // Admin warning — red highlighted card
                         if (msg.messageType === "admin_warning") {
                           return (
-                            <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
-                              <div style={{ padding: "7px 16px", borderRadius: 10, background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)", maxWidth: "85%" }}>
-                                <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 700, marginBottom: 2 }}>⚠️ Aviso do Admin ({msg.fromName})</div>
-                                <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.4 }}>{msg.content}</div>
-                                <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "right", marginTop: 3 }}>
-                                  {new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                                </div>
+                            <div key={msg.id} style={{
+                              border: "1.5px solid rgba(239,68,68,0.5)",
+                              borderRadius: 12,
+                              background: "rgba(239,68,68,0.07)",
+                              padding: "10px 14px",
+                            }}>
+                              <div style={{
+                                fontSize: 11, fontWeight: 800, color: "#ef4444",
+                                marginBottom: 6, display: "flex", alignItems: "center", gap: 5,
+                                textTransform: "uppercase", letterSpacing: 0.5,
+                              }}>
+                                <AlertTriangle size={13} /> AVISO DA ADMINISTRAÇÃO
+                              </div>
+                              <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5 }}>{msg.content}</div>
+                              <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "right", marginTop: 4 }}>
+                                {msg.fromName} · {new Date(msg.createdAt).toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                               </div>
                             </div>
                           );

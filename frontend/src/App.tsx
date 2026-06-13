@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Globe2, LogOut, Map, Briefcase, Users, MessageSquare, Wallet, User, Sun, Moon, Euro } from "lucide-react";
 import { translations, type TranslationKey } from "./i18n/translations";
+import { ToastContainer } from "./components/ToastContainer";
+import { NotificationBell, type NotificationItem } from "./components/NotificationBell";
+import { toast } from "./utils/toast";
 import { WorkersPage } from "./pages/WorkersPage";
 import { JobsPage } from "./pages/JobsPage";
 import { LandingPage } from "./pages/LandingPage";
@@ -61,15 +64,73 @@ export function App() {
       });
   }, []);
 
-  // Refresh wallet balance in topbar every 8 seconds
+  // Refresh wallet balance in topbar — periodically and right after payments
+  const refreshWallet = () =>
+    api.getWallet()
+      .then((w) => setUser((prev) => prev ? { ...prev, walletBalance: w.balance } : prev))
+      .catch(() => {});
+
   useEffect(() => {
     if (!user) return;
-    const tick = () =>
-      api.getWallet()
-        .then((w) => setUser((prev) => prev ? { ...prev, walletBalance: w.balance } : prev))
+    refreshWallet();
+    const id = setInterval(refreshWallet, 8000);
+    return () => clearInterval(id);
+  }, [user?.id]);
+
+  // Notification feed (bell) + top-right toast when a new message arrives
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
+
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notifLastSeen, setNotifLastSeen] = useState<string>(() => localStorage.getItem("flexjob_notif_seen") || "");
+  const [messagesTarget, setMessagesTarget] = useState<{ partnerId: number; partnerName: string; partnerAvatar?: string; jobId?: number } | null>(null);
+
+  function markNotificationsSeen() {
+    const now = new Date().toISOString();
+    setNotifLastSeen(now);
+    localStorage.setItem("flexjob_notif_seen", now);
+  }
+
+  useEffect(() => {
+    if (!user) return;
+    const lastTimes: Record<string, string> = {};
+    let first = true;
+    const check = () =>
+      api.getInbox()
+        .then((convs) => {
+          const items: NotificationItem[] = [];
+          convs.forEach((c) => {
+            const key = `${c.partnerId}-${c.jobId}`;
+            const isAdmin = c.partnerRole === "admin";
+            const preview = c.lastMessage?.startsWith("{") ? `📋 ${t("chatProposalTitle")}` : (c.lastMessage ?? "");
+            if (c.lastFromUserId !== user.id) {
+              items.push({
+                key,
+                partnerId: c.partnerId,
+                partnerName: isAdmin ? "Administração FlexJob" : c.partnerName,
+                partnerAvatar: c.partnerAvatar,
+                jobId: c.jobId,
+                jobTitle: c.jobTitle,
+                preview: isAdmin ? `⚠ ${preview}` : preview,
+                time: c.lastMessageTime,
+                isAdmin,
+              });
+            }
+            const prev = lastTimes[key];
+            const isNew = !first && (!prev || c.lastMessageTime > prev);
+            if (isNew && c.lastFromUserId !== user.id && viewRef.current !== "messages") {
+              if (isAdmin) toast.error(`⚠ Aviso da administração: ${preview.slice(0, 70)}`);
+              else toast.info(`💬 ${c.partnerName}: ${preview.slice(0, 70)}`);
+            }
+            lastTimes[key] = c.lastMessageTime;
+          });
+          items.sort((a, b) => (a.time < b.time ? 1 : -1));
+          setNotifications(items.slice(0, 15));
+          first = false;
+        })
         .catch(() => {});
-    tick();
-    const id = setInterval(tick, 8000);
+    check();
+    const id = setInterval(check, 10000);
     return () => clearInterval(id);
   }, [user?.id]);
 
@@ -116,7 +177,7 @@ export function App() {
         })
         .catch((err) => console.error("Error loading worker jobs:", err));
     }
-  }, [user, view]);
+  }, [user?.id]);
 
   function handleLogin(nextUser: UserType) {
     setUser(nextUser);
@@ -152,7 +213,7 @@ export function App() {
         openChat(item.id, item.title, `https://api.dicebear.com/7.x/bottts/svg?seed=${item.title}`);
       }
     } catch (err: any) {
-      alert(err.message || "Erro ao efetuar a candidatura.");
+      toast.error(err.message || "Erro ao efetuar a candidatura.");
     }
   }
 
@@ -163,18 +224,28 @@ export function App() {
   if (loading) {
     return (
       <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh", fontSize: "1.2rem", fontWeight: "bold" }}>
-        A carregar o FlexJob...
+        {t("loading")}
       </div>
     );
   }
 
   if (!user) {
-    return <LandingPage language={language} onLanguageChange={setLanguage} onLogin={handleLogin} t={t} />;
+    return (
+      <>
+        <ToastContainer />
+        <LandingPage language={language} onLanguageChange={setLanguage} onLogin={handleLogin} t={t} />
+      </>
+    );
   }
 
   // Admin gets a completely separate layout
   if (user.role === "admin") {
-    return <AdminPage onLogout={handleLogout} />;
+    return (
+      <>
+        <ToastContainer />
+        <AdminPage onLogout={handleLogout} />
+      </>
+    );
   }
 
   const allowedViews: AppView[] = user.role === "worker"
@@ -215,7 +286,18 @@ export function App() {
         onStartChat={(pId, pName, pAvatar, jId) => openChat(pId, pName, pAvatar, jId)}
       />
     ),
-    messages: <MessagesPage user={user} />,
+    messages: (
+      <MessagesPage
+        key={messagesTarget ? `${messagesTarget.partnerId}-${messagesTarget.jobId ?? 0}` : "inbox"}
+        user={user}
+        onWalletRefresh={refreshWallet}
+        t={t}
+        initialPartnerId={messagesTarget?.partnerId}
+        initialPartnerName={messagesTarget?.partnerName}
+        initialPartnerAvatar={messagesTarget?.partnerAvatar}
+        initialJobId={messagesTarget?.jobId}
+      />
+    ),
     wallet:   <WalletPage t={t} />,
     profile:  <ProfilePage t={t} user={user} onUserUpdate={(updated) => setUser((prev) => prev ? { ...prev, ...updated } : prev)} />,
   };
@@ -253,6 +335,16 @@ export function App() {
               {(user.walletBalance ?? 0).toFixed(2)}
             </span>
           </div>
+          <NotificationBell
+            notifications={notifications}
+            lastSeen={notifLastSeen}
+            onMarkSeen={markNotificationsSeen}
+            onSelect={(n) => {
+              setMessagesTarget({ partnerId: n.partnerId, partnerName: n.partnerName, partnerAvatar: n.partnerAvatar, jobId: n.jobId > 0 ? n.jobId : undefined });
+              setView("messages");
+            }}
+            emptyLabel={t("noNotifications")}
+          />
           <button className="icon-button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle theme">
             {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
           </button>
@@ -282,6 +374,8 @@ export function App() {
         ))}
       </nav>
 
+      <ToastContainer />
+
       {activeChat && (
         <ChatModal
           partnerId={activeChat.partnerId}
@@ -290,6 +384,7 @@ export function App() {
           jobId={activeChat.jobId}
           onClose={() => setActiveChat(null)}
           currentUser={user}
+          t={t}
         />
       )}
     </div>
