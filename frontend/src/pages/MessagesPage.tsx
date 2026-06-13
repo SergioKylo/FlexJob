@@ -872,7 +872,7 @@ export function MessagesPage({
                         {[1, 2, 3, 4, 5].map((s) => (
                           <button key={s} onClick={() => setRating(s)}
                             style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", opacity: s <= rating ? 1 : 0.3 }}>
-                            <Star size={22} fill={s <= rating ? "#e9bd2b" : "none"} color="#e9bd2b" />
+                            <Star size={22} fill={s <= rating ? "#f3cd3c" : "none"} color="#f3cd3c" />
                           </button>
                         ))}
                       </div>
@@ -916,7 +916,7 @@ export function MessagesPage({
                             {[1, 2, 3, 4, 5].map((s) => (
                               <button key={s} onClick={() => setWorkerReviewRating(s)}
                                 style={{ background: "none", border: "none", cursor: "pointer", opacity: s <= workerReviewRating ? 1 : 0.3 }}>
-                                <Star size={22} fill={s <= workerReviewRating ? "#e9bd2b" : "none"} color="#e9bd2b" />
+                                <Star size={22} fill={s <= workerReviewRating ? "#f3cd3c" : "none"} color="#f3cd3c" />
                               </button>
                             ))}
                           </div>

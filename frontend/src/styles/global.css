@@ -5,8 +5,9 @@
   --ink:     #f0f0ed;
   --muted:   #7a8075;
   --line:    #2c2c29;
-  --yellow:  #e9bd2b;
-  --yellow-dark: #c9a012;
+  --yellow:  #f3cd3c;
+  --yellow-dark: #dcb01f;
+  --logo-yellow: #ffd233;
   --green:   #22c97a;
   --blue:    #4a90e2;
   --red:     #f06060;
@@ -21,9 +22,10 @@
   --ink:     #1c1d18;
   --muted:   #62675c;
   --line:    #cfd4c7;
-  /* Deeper amber — the bright yellow glares on a light background */
-  --yellow:  #c2920e;
-  --yellow-dark: #a17a09;
+  /* Readable gold on a light background; the logo keeps the bright yellow */
+  --yellow:  #c59b12;
+  --yellow-dark: #a8810a;
+  --logo-yellow: #f0c020;
   --shadow:  0 18px 50px rgba(0, 0, 0, 0.1);
 }
 
@@ -292,7 +294,7 @@ button {
   height: 38px;
   place-items: center;
   border-radius: 10px;
-  background: var(--yellow);
+  background: var(--logo-yellow);
   color: #181506;
   font-size: 14px;
   font-weight: 900;
