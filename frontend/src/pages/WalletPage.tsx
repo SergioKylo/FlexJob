@@ -68,9 +68,9 @@ export function WalletPage({ t }: WalletPageProps) {
                 icon: <Lock size={18} />,
                 label: t("protectedBalance"),
                 value: `€ ${escrow.toFixed(2)}`,
-                color: "#ffd233",
-                bg: "rgba(255,210,51,0.1)",
-                border: "rgba(255,210,51,0.2)",
+                color: "var(--yellow)",
+                bg: "rgba(233,189,43,0.12)",
+                border: "rgba(233,189,43,0.25)",
               },
               {
                 icon: <TrendingUp size={18} />,

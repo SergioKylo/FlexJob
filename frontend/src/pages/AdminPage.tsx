@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   Users, Briefcase, MessageSquare, TrendingUp,
   Trash2, XCircle, Search, BarChart3, RefreshCw,
-  LogOut, Star, AlertTriangle, ArrowLeft,
+  LogOut, Star, AlertTriangle, ArrowLeft, Sun, Moon,
 } from "lucide-react";
 import { api } from "../utils/api";
 
@@ -182,7 +182,7 @@ function fmtBannedUntil(bannedUntil?: string | null): string {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
-export function AdminPage({ onLogout }: { onLogout: () => void }) {
+export function AdminPage({ onLogout, theme, onToggleTheme }: { onLogout: () => void; theme?: "dark" | "light"; onToggleTheme?: () => void }) {
   const [tab, setTab] = useState<Tab>("overview");
   const [stats, setStats]     = useState<AdminStats | null>(null);
   const [users, setUsers]     = useState<AdminUser[]>([]);
@@ -470,6 +470,11 @@ export function AdminPage({ onLogout }: { onLogout: () => void }) {
             <RefreshCw size={14} style={{ animation: refreshing ? "spin 1s linear infinite" : "none" }} />
             Atualizar
           </button>
+          {onToggleTheme && (
+            <button className="icon-button" onClick={onToggleTheme} aria-label="Mudar tema">
+              {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+            </button>
+          )}
           <button className="secondary small" onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <LogOut size={14} /> Sair
           </button>

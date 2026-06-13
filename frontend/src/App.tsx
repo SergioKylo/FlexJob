@@ -45,11 +45,9 @@ export function App() {
   const t = (key: TranslationKey) => translations[language][key];
 
   useEffect(() => {
-    // The admin panel is designed dark-only — force dark while an admin is logged in
-    const applied = user?.role === "admin" ? "dark" : theme;
-    document.documentElement.setAttribute("data-theme", applied);
+    document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("fj-theme", theme);
-  }, [theme, user?.role]);
+  }, [theme]);
 
   const allItems = useMemo(() => [...needs, ...workers], [needs, workers]);
 
@@ -235,7 +233,14 @@ export function App() {
     return (
       <>
         <ToastContainer />
-        <LandingPage language={language} onLanguageChange={setLanguage} onLogin={handleLogin} t={t} />
+        <LandingPage
+          language={language}
+          onLanguageChange={setLanguage}
+          onLogin={handleLogin}
+          t={t}
+          theme={theme}
+          onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+        />
       </>
     );
   }
@@ -245,7 +250,11 @@ export function App() {
     return (
       <>
         <ToastContainer />
-        <AdminPage onLogout={handleLogout} />
+        <AdminPage
+          onLogout={handleLogout}
+          theme={theme}
+          onToggleTheme={() => setTheme(theme === "dark" ? "light" : "dark")}
+        />
       </>
     );
   }

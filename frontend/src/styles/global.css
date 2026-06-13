@@ -5,8 +5,8 @@
   --ink:     #f0f0ed;
   --muted:   #7a8075;
   --line:    #2c2c29;
-  --yellow:  #ffd233;
-  --yellow-dark: #efb900;
+  --yellow:  #e9bd2b;
+  --yellow-dark: #c9a012;
   --green:   #22c97a;
   --blue:    #4a90e2;
   --red:     #f06060;
@@ -15,35 +15,38 @@
 }
 
 [data-theme="light"] {
-  --bg:      #f3f5f2;
-  --surface: #ffffff;
-  --surface2: #edf0ea;
-  --ink:     #141511;
-  --muted:   #686d63;
-  --line:    #dde2d8;
-  --shadow:  0 18px 50px rgba(0, 0, 0, 0.12);
+  --bg:      #e9ebe5;
+  --surface: #f4f5f1;
+  --surface2: #e0e3da;
+  --ink:     #1c1d18;
+  --muted:   #62675c;
+  --line:    #cfd4c7;
+  /* Deeper amber — the bright yellow glares on a light background */
+  --yellow:  #c2920e;
+  --yellow-dark: #a17a09;
+  --shadow:  0 18px 50px rgba(0, 0, 0, 0.1);
 }
 
 [data-theme="light"] .topbar {
-  background: rgba(243, 245, 242, 0.92);
+  background: rgba(233, 235, 229, 0.92);
 }
 
 [data-theme="light"] .bottom-nav {
-  background: rgba(255, 255, 255, 0.97);
+  background: rgba(244, 245, 241, 0.97);
 }
 
 [data-theme="light"] .map-detail {
-  background: rgba(255, 255, 255, 0.98);
+  background: rgba(244, 245, 241, 0.98);
 }
 
 [data-theme="light"] .location-pill {
-  background: rgba(243, 245, 242, 0.92);
+  background: rgba(233, 235, 229, 0.92);
 }
 
 [data-theme="light"] .landing-shell {
   background:
-    linear-gradient(135deg, rgba(255, 210, 51, 0.1), transparent 42%),
-    linear-gradient(315deg, rgba(34, 201, 122, 0.06), transparent 38%),
+    linear-gradient(135deg, rgba(194, 146, 14, 0.08), transparent 42%),
+    linear-gradient(315deg, rgba(34, 201, 122, 0.05), transparent 38%),
     var(--bg);
 }
 

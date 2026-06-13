@@ -1,5 +1,5 @@
 import { type FormEvent, useState } from "react";
-import { Globe2 } from "lucide-react";
+import { Globe2, Sun, Moon } from "lucide-react";
 import type { Language, User, UserRole } from "../types";
 import type { TranslationKey } from "../i18n/translations";
 import { api } from "../utils/api";
@@ -9,6 +9,8 @@ type LandingPageProps = {
   onLanguageChange: (language: Language) => void;
   onLogin: (user: User) => void;
   t: (key: TranslationKey) => string;
+  theme?: "dark" | "light";
+  onToggleTheme?: () => void;
 };
 
 const REGIONS = [
@@ -23,7 +25,7 @@ const REGIONS = [
 ];
 
 
-export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingPageProps) {
+export function LandingPage({ language, onLanguageChange, onLogin, t, theme, onToggleTheme }: LandingPageProps) {
   const [authMode, setAuthMode] = useState<"signup" | "login">("signup");
   const [name, setName]         = useState("Maria Santos");
   const [email, setEmail]       = useState("maria@email.com");
@@ -81,10 +83,17 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
           <span className="brand-mark">FJ</span>
           <span>FlexJob</span>
         </div>
-        <button className="icon-button" onClick={() => onLanguageChange(language === "pt" ? "en" : "pt")}>
-          <Globe2 size={16} />
-          {language === "pt" ? "EN" : "PT"}
-        </button>
+        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+          {onToggleTheme && (
+            <button className="icon-button" onClick={onToggleTheme} aria-label="Toggle theme">
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+          )}
+          <button className="icon-button" onClick={() => onLanguageChange(language === "pt" ? "en" : "pt")}>
+            <Globe2 size={16} />
+            {language === "pt" ? "EN" : "PT"}
+          </button>
+        </div>
       </header>
 
       {/* Hero + auth */}
@@ -165,11 +174,11 @@ export function LandingPage({ language, onLanguageChange, onLogin, t }: LandingP
               <>
                 <div className="role-grid" style={{ margin: "0.5rem 0" }}>
                   <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                    <input type="radio" checked={role === "worker"} onChange={() => setRole("worker")} style={{ accentColor: "#ffd233" }} />
+                    <input type="radio" checked={role === "worker"} onChange={() => setRole("worker")} style={{ accentColor: "var(--yellow)" }} />
                     💼 {t("roleworker")}
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", cursor: "pointer" }}>
-                    <input type="radio" checked={role === "employer"} onChange={() => setRole("employer")} style={{ accentColor: "#ffd233" }} />
+                    <input type="radio" checked={role === "employer"} onChange={() => setRole("employer")} style={{ accentColor: "var(--yellow)" }} />
                     🏢 {t("roleEmployer")}
                   </label>
                 </div>
