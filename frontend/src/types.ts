@@ -85,6 +85,8 @@ export type InboxConversation = {
   partnerAvatar: string;
   partnerRole: string;
   lastMessage: string;
+  lastMessageType?: string;
   lastFromUserId?: number;
   lastMessageTime: string;
+  unreadCount?: number;
 };

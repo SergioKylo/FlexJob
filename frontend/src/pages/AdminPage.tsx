@@ -3,7 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   Users, Briefcase, MessageSquare, TrendingUp,
   Trash2, XCircle, Search, BarChart3, RefreshCw,
-  LogOut, Star, AlertTriangle, ArrowLeft, Sun, Moon,
+  LogOut, Star, AlertTriangle, ArrowLeft, Sun, Moon, Bell,
 } from "lucide-react";
 import { api } from "../utils/api";
 
@@ -36,7 +36,13 @@ type AdminConvMsg = {
   id: number; fromUserId: number; fromName: string;
   content: string; messageType: string; createdAt: string;
 };
-type Tab = "overview" | "users" | "jobs" | "messages";
+type AdminReport = {
+  user1Id: number; user2Id: number; jobId?: number;
+  user1Name: string; user2Name: string; jobTitle?: string;
+  jobPaymentStatus?: string; jobPaymentAmount: number;
+  reportCount: number; lastReportAt: string; reasons: string;
+};
+type Tab = "overview" | "users" | "jobs" | "messages" | "reports" | "avisos";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -106,6 +112,21 @@ function StatCard({ icon, label, value, color }: { icon: ReactNode; label: strin
 function fmt(d: string) {
   try { return new Date(d).toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric" }); }
   catch { return d; }
+}
+
+// Job-proposal messages store JSON in `content`; show a readable summary instead
+function adminMsgText(messageType: string, content: string): string {
+  if (messageType === "job_proposal") {
+    try {
+      const d = JSON.parse(content);
+      const parts: string[] = [];
+      if (d.title) parts.push(d.title);
+      if (d.pay) parts.push(`€${d.pay}/h`);
+      if (d.duration) parts.push(d.duration);
+      return `📋 Proposta de trabalho${parts.length ? " — " + parts.join(" · ") : ""}`;
+    } catch { return content; }
+  }
+  return content;
 }
 
 // ── Warning badge ─────────────────────────────────────────────────────────────
@@ -210,6 +231,22 @@ export function AdminPage({ onLogout, theme, onToggleTheme }: { onLogout: () => 
   const [warnInput, setWarnInput]         = useState("");
   const [sendingWarn, setSendingWarn]     = useState(false);
 
+  // Reports tab
+  const [reportList, setReportList]       = useState<AdminReport[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+  const [reportsResolved, setReportsResolved] = useState(false); // false = active queue, true = resolved
+  const [reportBusy, setReportBusy]       = useState<string | null>(null);
+
+  // Avisos tab (admin ↔ user threads)
+  const [warnConvs, setWarnConvs]         = useState<AdminConv[]>([]);
+  const [loadingWarns, setLoadingWarns]   = useState(false);
+  const [selectedWarnUser, setSelectedWarnUser] = useState<{ id: number; name: string } | null>(null);
+  const [warnThread, setWarnThread]       = useState<AdminConvMsg[]>([]);
+  const [loadingWarnThread, setLoadingWarnThread] = useState(false);
+  const [warnReply, setWarnReply]         = useState("");
+  const [sendingWarnReply, setSendingWarnReply] = useState(false);
+  const [warnModerating, setWarnModerating] = useState(false);
+
   // User conversation panel (users tab) ───────────────────────────────────────
   const [userPanelTarget, setUserPanelTarget]     = useState<AdminUser | null>(null);
   const [userPanelMsgs, setUserPanelMsgs]         = useState<AdminConvMsg[]>([]);
@@ -251,6 +288,124 @@ export function AdminPage({ onLogout, theme, onToggleTheme }: { onLogout: () => 
   useEffect(() => {
     if (tab === "messages") loadConversations();
   }, [tab]);
+
+  function loadReports() {
+    setLoadingReports(true);
+    api.admin.getReports(reportsResolved)
+      .then((data) => { setReportList(data); setLoadingReports(false); })
+      .catch(() => setLoadingReports(false));
+  }
+
+  useEffect(() => {
+    if (tab === "reports") loadReports();
+  }, [tab, reportsResolved]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function handleResolveReport(rep: AdminReport, resolved: boolean) {
+    const key = `${rep.user1Id}-${rep.user2Id}-${rep.jobId ?? 0}`;
+    setReportBusy(key);
+    try {
+      await api.admin.resolveReport(rep.user1Id, rep.user2Id, rep.jobId ?? undefined, resolved);
+      loadReports();
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao atualizar o reporte.");
+    } finally {
+      setReportBusy(null);
+    }
+  }
+
+  async function handleRefund(rep: AdminReport) {
+    if (!rep.jobId) return;
+    const key = `refund-${rep.jobId}`;
+    setReportBusy(key);
+    try {
+      const res = await api.admin.refundEscrow(rep.jobId);
+      toast.success(res.message);
+      loadReports();
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao devolver o dinheiro.");
+    } finally {
+      setReportBusy(null);
+    }
+  }
+
+  // ── Avisos tab: admin ↔ user conversations ────────────────────────────────
+  function loadWarnConvs() {
+    if (!adminId) return;
+    setLoadingWarns(true);
+    api.admin.getConversations()
+      .then((data: AdminConv[]) => {
+        // Admin-involved threads, excluding the admin-to-self edge case
+        setWarnConvs(data.filter((c) => (c.user1Id === adminId || c.user2Id === adminId) && c.user1Id !== c.user2Id));
+        setLoadingWarns(false);
+      })
+      .catch(() => setLoadingWarns(false));
+  }
+
+  useEffect(() => {
+    if (tab === "avisos") loadWarnConvs();
+  }, [tab, adminId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!selectedWarnUser || !adminId) { setWarnThread([]); return; }
+    setLoadingWarnThread(true);
+    const u1 = Math.min(adminId, selectedWarnUser.id);
+    const u2 = Math.max(adminId, selectedWarnUser.id);
+    api.admin.getConversationMessages(u1, u2)
+      .then((data) => { setWarnThread(data); setLoadingWarnThread(false); })
+      .catch(() => setLoadingWarnThread(false));
+  }, [selectedWarnUser, adminId]);
+
+  async function handleRemoveWarningAvisos() {
+    if (!selectedWarnUser) return;
+    if (!confirm(`Retirar um aviso a ${selectedWarnUser.name}?`)) return;
+    setWarnModerating(true);
+    try {
+      const result = await adminModerate(selectedWarnUser.id, "removeWarning");
+      toast.success(result.message);
+      setUsers((prev) => prev.map((u) => u.id === selectedWarnUser.id
+        ? { ...u, warningCount: result.warningCount, banned: result.banned, bannedUntil: result.banned ? u.bannedUntil : null }
+        : u));
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao retirar o aviso.");
+    } finally {
+      setWarnModerating(false);
+    }
+  }
+
+  // Open the admin ↔ user chat with a specific user (used from Reports)
+  function openAdminChat(userId: number, userName: string) {
+    setSelectedWarnUser({ id: userId, name: userName });
+    setTab("avisos");
+  }
+
+  async function handleSendUserMsg(isWarning: boolean) {
+    if (!selectedWarnUser || !warnReply.trim() || !adminId) return;
+    if (isWarning) {
+      const next = ((users.find((u) => u.id === selectedWarnUser.id)?.warningCount) ?? 0) + 1;
+      const msg = `Enviar aviso formal a "${selectedWarnUser.name}"? Será o aviso ${next}/3.${next >= 3 ? "\n\nAo 3.º aviso a conta é banida." : ""}`;
+      if (!confirm(msg)) return;
+    }
+    setSendingWarnReply(true);
+    try {
+      const res = await adminSendMessageRaw(selectedWarnUser.id, warnReply.trim(), isWarning);
+      setWarnReply("");
+      const u1 = Math.min(adminId, selectedWarnUser.id);
+      const u2 = Math.max(adminId, selectedWarnUser.id);
+      const data = await api.admin.getConversationMessages(u1, u2);
+      setWarnThread(data);
+      // Keep the "Avisos: N/3" badge in sync without needing a refresh
+      if (isWarning && res.warningCount !== undefined) {
+        setUsers((prev) => prev.map((u) => u.id === selectedWarnUser.id
+          ? { ...u, warningCount: res.warningCount, banned: res.banned ?? u.banned, bannedUntil: res.bannedUntil ?? u.bannedUntil }
+          : u));
+      }
+      loadWarnConvs();
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao enviar a mensagem.");
+    } finally {
+      setSendingWarnReply(false);
+    }
+  }
 
   useEffect(() => {
     if (!selectedConv) { setConvMessages([]); return; }
@@ -429,7 +584,9 @@ export function AdminPage({ onLogout, theme, onToggleTheme }: { onLogout: () => 
     { key: "overview",  label: "Visão Geral",   icon: <BarChart3 size={15} /> },
     { key: "users",     label: `Utilizadores (${users.filter(u => u.role !== "admin").length})`, icon: <Users size={15} /> },
     { key: "jobs",      label: `Vagas (${jobs.length})`,       icon: <Briefcase size={15} /> },
-    { key: "messages",  label: `Mensagens (${messages.length})`, icon: <MessageSquare size={15} /> },
+    { key: "avisos",    label: "Mensagens",                    icon: <MessageSquare size={15} /> },
+    { key: "reports",   label: "Reportes",                     icon: <AlertTriangle size={15} /> },
+    { key: "messages",  label: `Mensagens (Utilizadores) (${messages.length})`, icon: <Users size={15} /> },
   ];
 
   // ── Loading state ──────────────────────────────────────────────────────────
@@ -721,7 +878,7 @@ export function AdminPage({ onLogout, theme, onToggleTheme }: { onLogout: () => 
                           <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
                             <div style={{ padding: "6px 14px", borderRadius: 10, background: color + "18", border: `1px solid ${color}44`, maxWidth: "80%" }}>
                               <span style={{ fontSize: 12, color, fontWeight: 600 }}>{msg.fromName}: </span>
-                              <span style={{ fontSize: 12, color: "var(--ink)" }}>{msg.content}</span>
+                              <span style={{ fontSize: 12, color: "var(--ink)" }}>{adminMsgText(msg.messageType, msg.content)}</span>
                             </div>
                           </div>
                         );
@@ -984,11 +1141,6 @@ export function AdminPage({ onLogout, theme, onToggleTheme }: { onLogout: () => 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
               <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
                 Conversas <span style={{ color: "var(--muted)", fontWeight: 400 }}>({convList.length})</span>
-                {convList.some(c => c.reportCount > 0) && (
-                  <span style={{ marginLeft: 8, padding: "2px 8px", borderRadius: 10, background: "rgba(239,68,68,0.12)", color: "#ef4444", fontSize: 12, fontWeight: 700 }}>
-                    🚩 {convList.filter(c => c.reportCount > 0).length} reportada{convList.filter(c => c.reportCount > 0).length !== 1 ? "s" : ""}
-                  </span>
-                )}
               </h2>
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 <button onClick={loadConversations} disabled={loadingConvs}
@@ -1143,7 +1295,7 @@ export function AdminPage({ onLogout, theme, onToggleTheme }: { onLogout: () => 
                             <div key={msg.id} style={{ display: "flex", justifyContent: "center" }}>
                               <div style={{ padding: "6px 14px", borderRadius: 10, background: color + "18", border: `1px solid ${color}44`, maxWidth: "80%" }}>
                                 <span style={{ fontSize: 12, color, fontWeight: 600 }}>{msg.fromName}: </span>
-                                <span style={{ fontSize: 12, color: "var(--ink)" }}>{msg.content}</span>
+                                <span style={{ fontSize: 12, color: "var(--ink)" }}>{adminMsgText(msg.messageType, msg.content)}</span>
                               </div>
                             </div>
                           );
@@ -1212,6 +1364,294 @@ export function AdminPage({ onLogout, theme, onToggleTheme }: { onLogout: () => 
                   <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", flexDirection: "column", gap: 10 }}>
                     <MessageSquare size={40} style={{ opacity: 0.2 }} />
                     <p style={{ margin: 0, fontSize: 14 }}>Selecione uma conversa para ver as mensagens</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {tab === "reports" && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+                {reportsResolved ? "Reportes resolvidos" : "Reportes ativos"}{" "}
+                <span style={{ color: "var(--muted)", fontWeight: 400 }}>({reportList.length})</span>
+              </h2>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button onClick={loadReports} disabled={loadingReports}
+                  style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    background: "var(--surface2)", color: "var(--muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                  <RefreshCw size={12} style={{ animation: loadingReports ? "spin 1s linear infinite" : "none" }} />
+                  Atualizar
+                </button>
+                {([false, true] as const).map((r) => (
+                  <button key={String(r)} onClick={() => setReportsResolved(r)}
+                    style={{
+                      padding: "6px 14px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                      background: reportsResolved === r ? "var(--brand)" : "var(--surface2)",
+                      color: reportsResolved === r ? "#fff" : "var(--muted)",
+                    }}>
+                    {r ? "✓ Resolvidos" : "🚩 Ativos"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loadingReports && reportList.length === 0 ? (
+              <div style={{ padding: 40, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>A carregar reportes...</div>
+            ) : reportList.length === 0 ? (
+              <div style={{ padding: 48, textAlign: "center", color: "var(--muted)", fontSize: 14 }}>
+                {reportsResolved ? "Ainda não há reportes resolvidos." : "🎉 Não há reportes ativos."}
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {reportList.map((rep) => {
+                  const key = `${rep.user1Id}-${rep.user2Id}-${rep.jobId ?? 0}`;
+                  const escrowActive = rep.jobPaymentStatus === "escrowed" && rep.jobPaymentAmount > 0;
+                  return (
+                    <div key={key} style={{
+                      background: "var(--surface)", border: "1px solid var(--line)",
+                      borderLeft: "3px solid #ef4444", borderRadius: 12, padding: "14px 16px",
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>
+                              {rep.user1Name} ↔ {rep.user2Name}
+                            </span>
+                            <span style={{ background: "rgba(239,68,68,0.15)", color: "#ef4444", fontSize: 10, fontWeight: 800, padding: "2px 6px", borderRadius: 6 }}>
+                              🚩 {rep.reportCount}
+                            </span>
+                          </div>
+                          {rep.jobTitle && (
+                            <div style={{ fontSize: 12, color: "#6366f1", fontWeight: 600, marginTop: 3 }}>💼 {rep.jobTitle}</div>
+                          )}
+                          {rep.reasons && (
+                            <div style={{ fontSize: 13, color: "var(--ink)", marginTop: 6, lineHeight: 1.5 }}>
+                              <span style={{ color: "var(--muted)" }}>Motivo: </span>{rep.reasons}
+                            </div>
+                          )}
+                          {escrowActive && (
+                            <div style={{ fontSize: 12, color: "#f59e0b", fontWeight: 700, marginTop: 6 }}>
+                              💰 €{rep.jobPaymentAmount.toFixed(2)} em garantia neste trabalho
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Último reporte: {fmt(rep.lastReportAt)}</div>
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+                          <button
+                            onClick={() => {
+                              setSelectedConv({
+                                user1Id: rep.user1Id, user2Id: rep.user2Id, jobId: rep.jobId,
+                                user1Name: rep.user1Name, user2Name: rep.user2Name, jobTitle: rep.jobTitle,
+                                lastMessageAt: rep.lastReportAt, messageCount: 0, reportCount: rep.reportCount,
+                              });
+                              setTab("messages");
+                            }}
+                            style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer",
+                              fontSize: 12, fontWeight: 600, background: "var(--surface2)", color: "var(--ink)" }}>
+                            Ver conversa
+                          </button>
+                          <button
+                            onClick={() => openAdminChat(rep.user1Id, rep.user1Name)}
+                            style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer",
+                              fontSize: 12, fontWeight: 600, background: "var(--surface2)", color: "var(--ink)" }}>
+                            ✉ {rep.user1Name}
+                          </button>
+                          <button
+                            onClick={() => openAdminChat(rep.user2Id, rep.user2Name)}
+                            style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer",
+                              fontSize: 12, fontWeight: 600, background: "var(--surface2)", color: "var(--ink)" }}>
+                            ✉ {rep.user2Name}
+                          </button>
+                          {escrowActive && (
+                            <button
+                              onClick={() => handleRefund(rep)}
+                              disabled={reportBusy === `refund-${rep.jobId}`}
+                              style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer",
+                                fontSize: 12, fontWeight: 700, background: "#f59e0b", color: "#000",
+                                opacity: reportBusy === `refund-${rep.jobId}` ? 0.5 : 1 }}>
+                              ↩ Devolver €{rep.jobPaymentAmount.toFixed(2)}
+                            </button>
+                          )}
+                          {reportsResolved ? (
+                            <button
+                              onClick={() => handleResolveReport(rep, false)}
+                              disabled={reportBusy === key}
+                              style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer",
+                                fontSize: 12, fontWeight: 600, background: "var(--surface2)", color: "var(--muted)",
+                                opacity: reportBusy === key ? 0.5 : 1 }}>
+                              ↺ Reabrir
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleResolveReport(rep, true)}
+                              disabled={reportBusy === key}
+                              style={{ padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer",
+                                fontSize: 12, fontWeight: 700, background: "#22c97a", color: "#fff",
+                                opacity: reportBusy === key ? 0.5 : 1 }}>
+                              ✓ Marcar como Resolvido
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "avisos" && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>
+                Mensagens <span style={{ color: "var(--muted)", fontWeight: 400 }}>({warnConvs.length})</span>
+                <span style={{ marginLeft: 8, fontSize: 12, color: "var(--muted)", fontWeight: 400 }}>· conversa direta entre a administração e os utilizadores</span>
+              </h2>
+              <button onClick={loadWarnConvs} disabled={loadingWarns}
+                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer", fontSize: 12, fontWeight: 600,
+                  background: "var(--surface2)", color: "var(--muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                <RefreshCw size={12} style={{ animation: loadingWarns ? "spin 1s linear infinite" : "none" }} />
+                Atualizar
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 16, height: "calc(100vh - 220px)", minHeight: 400 }}>
+              {/* Left: list of users the admin has messaged */}
+              <div style={{ width: 280, flexShrink: 0, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+                {loadingWarns && warnConvs.length === 0 && (
+                  <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>A carregar...</div>
+                )}
+                {!loadingWarns && warnConvs.length === 0 && (
+                  <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Sem conversas com utilizadores ainda.</div>
+                )}
+                {warnConvs.map((c) => {
+                  const otherId = c.user1Id === adminId ? c.user2Id : c.user1Id;
+                  const otherName = c.user1Id === adminId ? c.user2Name : c.user1Name;
+                  const isActive = selectedWarnUser?.id === otherId;
+                  return (
+                    <button key={otherId} onClick={() => setSelectedWarnUser({ id: otherId, name: otherName })}
+                      style={{
+                        display: "flex", flexDirection: "column", gap: 4, padding: "12px 14px",
+                        border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", textAlign: "left",
+                        background: isActive ? "rgba(99,102,241,0.08)" : "transparent",
+                        borderLeft: isActive ? "3px solid var(--brand)" : "3px solid transparent",
+                      }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)" }}>{otherName}</span>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>{c.messageCount} msg</span>
+                        <span style={{ fontSize: 10, color: "var(--muted)" }}>{fmt(c.lastMessageAt)}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right: thread */}
+              <div style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--line)", borderRadius: 14, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                {selectedWarnUser ? (
+                  <>
+                    <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>Administração ↔ {selectedWarnUser.name}</span>
+                      {(() => {
+                        const wu = users.find((u) => u.id === selectedWarnUser.id);
+                        const count = wu?.warningCount ?? 0;
+                        return (
+                          <>
+                            <WarningBadge count={count} banned={wu?.banned ?? false} bannedUntil={wu?.bannedUntil} />
+                            <span style={{
+                              fontSize: 12, fontWeight: 700, padding: "2px 8px", borderRadius: 8,
+                              background: count >= 2 ? "rgba(239,68,68,0.1)" : count > 0 ? "rgba(245,158,11,0.1)" : "var(--surface2)",
+                              color: count >= 2 ? "#ef4444" : count > 0 ? "#f59e0b" : "var(--muted)",
+                            }}>
+                              Avisos: {count}/3
+                            </span>
+                            {count > 0 && (
+                              <button
+                                onClick={handleRemoveWarningAvisos}
+                                disabled={warnModerating}
+                                style={{ marginLeft: "auto", padding: "5px 12px", borderRadius: 8, border: "1px solid var(--line)", cursor: "pointer",
+                                  fontSize: 12, fontWeight: 600, background: "var(--surface2)", color: "var(--ink)",
+                                  opacity: warnModerating ? 0.5 : 1 }}>
+                                − Retirar aviso
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+                      {loadingWarnThread ? (
+                        <div style={{ textAlign: "center", color: "var(--muted)", paddingTop: 40 }}>A carregar...</div>
+                      ) : warnThread.length === 0 ? (
+                        <div style={{ textAlign: "center", color: "var(--muted)", paddingTop: 40 }}>Sem mensagens.</div>
+                      ) : warnThread.map((msg) => {
+                        const fromAdmin = msg.fromUserId === adminId;
+                        if (msg.messageType === "admin_warning") {
+                          return (
+                            <div key={msg.id} style={{ border: "1.5px solid rgba(239,68,68,0.5)", borderRadius: 12, background: "rgba(239,68,68,0.07)", padding: "10px 14px" }}>
+                              <div style={{ fontSize: 11, fontWeight: 800, color: "#ef4444", marginBottom: 6, display: "flex", alignItems: "center", gap: 5, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                                <AlertTriangle size={13} /> AVISO DA ADMINISTRAÇÃO
+                              </div>
+                              <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.5 }}>{msg.content}</div>
+                              <div style={{ fontSize: 10, color: "var(--muted)", textAlign: "right", marginTop: 4 }}>
+                                {msg.fromName} · {new Date(msg.createdAt).toLocaleString("pt-PT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: fromAdmin ? "flex-end" : "flex-start" }}>
+                            <span style={{ fontSize: 10, color: "var(--muted)", marginBottom: 2, padding: "0 4px" }}>{msg.fromName}</span>
+                            <div style={{
+                              maxWidth: "72%", padding: "8px 12px",
+                              borderRadius: fromAdmin ? "16px 4px 16px 16px" : "4px 16px 16px 16px",
+                              background: fromAdmin ? "linear-gradient(135deg, #6366f1, #4f46e5)" : "var(--surface2)",
+                              color: fromAdmin ? "#fff" : "var(--ink)", fontSize: 13, lineHeight: 1.45,
+                            }}>
+                              {adminMsgText(msg.messageType, msg.content)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Reply box */}
+                    <div style={{ borderTop: "1px solid var(--line)", padding: "10px 14px" }}>
+                      <textarea
+                        value={warnReply}
+                        onChange={(e) => setWarnReply(e.target.value)}
+                        placeholder={`Escrever mensagem para ${selectedWarnUser.name}...`}
+                        rows={2}
+                        style={{ width: "100%", borderRadius: 8, border: "1px solid var(--line)", background: "var(--bg)", color: "var(--ink)", fontSize: 13, padding: "7px 10px", resize: "none", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                      />
+                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                        <button
+                          onClick={() => handleSendUserMsg(false)}
+                          disabled={!warnReply.trim() || sendingWarnReply}
+                          style={{ flex: 2, padding: "7px 10px", borderRadius: 8, border: "none", cursor: "pointer",
+                            background: "linear-gradient(135deg, #6366f1, #4f46e5)", color: "#fff", fontSize: 12, fontWeight: 700,
+                            opacity: !warnReply.trim() || sendingWarnReply ? 0.45 : 1 }}>
+                          {sendingWarnReply ? "A enviar..." : "Enviar mensagem"}
+                        </button>
+                        <button
+                          onClick={() => handleSendUserMsg(true)}
+                          disabled={!warnReply.trim() || sendingWarnReply}
+                          title="Enviar como aviso formal (conta para o limite de 3)"
+                          style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(245,158,11,0.4)", cursor: "pointer",
+                            background: "rgba(245,158,11,0.12)", color: "#f59e0b", fontSize: 12, fontWeight: 700,
+                            opacity: !warnReply.trim() || sendingWarnReply ? 0.45 : 1 }}>
+                          ⚠ Aviso
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--muted)", flexDirection: "column", gap: 10 }}>
+                    <Bell size={40} style={{ opacity: 0.2 }} />
+                    <p style={{ margin: 0, fontSize: 14 }}>Selecione um utilizador para conversar</p>
                   </div>
                 )}
               </div>

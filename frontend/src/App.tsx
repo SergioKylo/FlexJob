@@ -183,12 +183,18 @@ export function App() {
     setUser(nextUser);
     setMode(nextUser.role === "employer" ? "work" : "need");
     setView("map");
+    // Clear any chat state left over from a previous account in this tab
+    setMessagesTarget(null);
+    setActiveChat(null);
   }
 
   async function handleLogout() {
     try { await api.logout(); } catch { /* ignore */ }
     setUser(null);
     setView("map");
+    // Clear chat state so the next account doesn't inherit it
+    setMessagesTarget(null);
+    setActiveChat(null);
   }
 
   async function createMatch(item: Opportunity) {

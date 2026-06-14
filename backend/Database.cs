@@ -166,6 +166,12 @@ public static class Database
         try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN banned INTEGER NOT NULL DEFAULT 0"); } catch { }
         try { ExecuteNonQuery("ALTER TABLE users ADD COLUMN banned_until TEXT"); } catch { }
+        // Admin can mark reports as resolved so the active queue only shows new ones
+        try { ExecuteNonQuery("ALTER TABLE reports ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0"); } catch { }
+        try { ExecuteNonQuery("ALTER TABLE reports ADD COLUMN resolved_at TEXT"); } catch { }
+        // Unread tracking for chat. Existing messages are marked read on first migration
+        // so the unread badges start from a clean slate.
+        try { ExecuteNonQuery("ALTER TABLE messages ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0"); ExecuteNonQuery("UPDATE messages SET is_read = 1"); } catch { }
         // Note: SQLite does not support MODIFY COLUMN — skip that migration
 
         // Replace old people-photo avatars (pravatar) with neutral generated ones

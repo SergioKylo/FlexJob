@@ -231,7 +231,7 @@ export const api = {
   },
 
   // Jobs detail
-  async getJobDetail(jobId: number): Promise<{ id: number; title: string; pay: number; duration: string; status: string; paymentStatus: string; employerId: number; employerName: string; workerId?: number; workerName?: string }> {
+  async getJobDetail(jobId: number): Promise<{ id: number; title: string; pay: number; paymentAmount: number; duration: string; status: string; paymentStatus: string; employerId: number; employerName: string; workerId?: number; workerName?: string }> {
     return request<any>(`/api/jobs/detail?jobId=${jobId}`);
   },
 
@@ -361,10 +361,25 @@ export const api = {
       if (jobId != null) p.set("jobId", String(jobId));
       return request<any[]>(`/api/admin/conversation-messages?${p}`);
     },
-    async sendMessage(toUserId: number, content: string): Promise<{ message: string }> {
+    async sendMessage(toUserId: number, content: string): Promise<{ message: string; warningCount?: number; banned?: boolean; bannedUntil?: string | null }> {
       return request<any>("/api/admin/send-message", {
         method: "POST",
         body: { toUserId, content } as any,
+      });
+    },
+    async getReports(resolved: boolean): Promise<any[]> {
+      return request<any[]>(`/api/admin/reports?resolved=${resolved ? 1 : 0}`);
+    },
+    async resolveReport(user1Id: number, user2Id: number, jobId?: number, resolved = true): Promise<{ message: string; updated: number }> {
+      return request<any>("/api/admin/reports/resolve", {
+        method: "POST",
+        body: { user1Id, user2Id, jobId: jobId ?? null, resolved } as any,
+      });
+    },
+    async refundEscrow(jobId: number): Promise<{ message: string; amount: number }> {
+      return request<any>("/api/admin/payments/refund", {
+        method: "POST",
+        body: { jobId } as any,
       });
     },
   },

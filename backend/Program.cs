@@ -752,16 +752,22 @@ webApp.MapGet("/api/messages/inbox", (HttpContext context) =>
               u.avatar as partner_avatar,
               u.role as partner_role,
               m.content as last_message,
+              m.message_type as last_message_type,
               m.from_user_id as last_from_user_id,
-              m.created_at as last_message_time
+              m.created_at as last_message_time,
+              (SELECT COUNT(*) FROM messages m2
+                 WHERE m2.to_user_id = @userId
+                   AND m2.from_user_id = CASE WHEN m.from_user_id = @userId THEN m.to_user_id ELSE m.from_user_id END
+                   AND m2.is_read = 0) as unread_count
           FROM messages m
           LEFT JOIN jobs j ON m.job_id = j.id
           JOIN users u ON u.id = CASE WHEN m.from_user_id = @userId THEN m.to_user_id ELSE m.from_user_id END
           WHERE m.id IN (
+              -- One conversation per person: the latest message with each partner
               SELECT MAX(id)
               FROM messages
               WHERE from_user_id = @userId OR to_user_id = @userId
-              GROUP BY COALESCE(job_id, 0), CASE WHEN from_user_id = @userId THEN to_user_id ELSE from_user_id END
+              GROUP BY CASE WHEN from_user_id = @userId THEN to_user_id ELSE from_user_id END
           )
           ORDER BY m.created_at DESC",
         new() { { "@userId", userId } });
@@ -771,15 +777,19 @@ webApp.MapGet("/api/messages/inbox", (HttpContext context) =>
     {
         response.Add(new
         {
-            jobId = c["job_id"] != null ? Convert.ToInt32(c["job_id"]) : 0,
-            jobTitle = c["job_title"]?.ToString() ?? "Contacto Direto",
+            // One conversation per person — not per job. The active job (for payments)
+            // is derived on the client from the messages themselves.
+            jobId = 0,
+            jobTitle = (string?)null,
             partnerId = Convert.ToInt32(c["partner_id"]),
             partnerName = c["partner_name"]?.ToString(),
             partnerAvatar = c["partner_avatar"]?.ToString(),
             partnerRole = c["partner_role"]?.ToString(),
             lastMessage = c["last_message"]?.ToString(),
+            lastMessageType = c["last_message_type"]?.ToString(),
             lastFromUserId = Convert.ToInt32(c["last_from_user_id"]),
-            lastMessageTime = c["last_message_time"]?.ToString()
+            lastMessageTime = c["last_message_time"]?.ToString(),
+            unreadCount = c["unread_count"] != null && c["unread_count"] != DBNull.Value ? Convert.ToInt32(c["unread_count"]) : 0
         });
     }
 
@@ -816,6 +826,13 @@ webApp.MapGet("/api/messages", (HttpContext context, int partnerId, int? jobId) 
     query += " ORDER BY m.created_at ASC";
 
     var msgs = Database.ExecuteQuery(query, parameters);
+
+    // Mark the partner's messages in this conversation as read now that they're opened
+    var readParams = new Dictionary<string, object> { { "@userId", userId }, { "@partnerId", partnerId } };
+    string readSql = "UPDATE messages SET is_read = 1 WHERE to_user_id = @userId AND from_user_id = @partnerId AND is_read = 0";
+    if (jobId.HasValue && jobId.Value > 0) { readSql += " AND job_id = @jobId"; readParams.Add("@jobId", jobId.Value); }
+    try { Database.ExecuteNonQuery(readSql, readParams); } catch { }
+
     var response = new List<object>();
     foreach (var m in msgs)
     {
@@ -891,6 +908,7 @@ webApp.MapGet("/api/jobs/detail", (HttpContext context, int jobId) =>
         id = Convert.ToInt32(job["id"]),
         title = job["title"]?.ToString(),
         pay = Convert.ToDouble(job["pay"]),
+        paymentAmount = job.ContainsKey("payment_amount") && job["payment_amount"] != null && job["payment_amount"] != DBNull.Value ? Convert.ToDouble(job["payment_amount"]) : 0,
         duration = job["duration"]?.ToString(),
         status = job["status"]?.ToString(),
         paymentStatus = job.ContainsKey("payment_status") ? job["payment_status"]?.ToString() ?? "none" : "none",
@@ -1280,9 +1298,9 @@ webApp.MapPost("/api/jobs/propose", (HttpContext context, ProposeJobRequest requ
         // Create a new job from the proposal details
         if (string.IsNullOrWhiteSpace(request.Title))
             return Results.BadRequest(new { message = "Título obrigatório." });
-        var empRows = Database.ExecuteQuery("SELECT lat, lng FROM users WHERE id = @id", new() { { "@id", userId } });
-        double lat = empRows.Count > 0 && empRows[0]["lat"] != null ? Convert.ToDouble(empRows[0]["lat"]) : 0;
-        double lng = empRows.Count > 0 && empRows[0]["lng"] != null ? Convert.ToDouble(empRows[0]["lng"]) : 0;
+        var empRows = Database.ExecuteQuery("SELECT location_lat, location_lng FROM users WHERE id = @id", new() { { "@id", userId } });
+        double lat = empRows.Count > 0 && empRows[0]["location_lat"] != null ? Convert.ToDouble(empRows[0]["location_lat"]) : 0;
+        double lng = empRows.Count > 0 && empRows[0]["location_lng"] != null ? Convert.ToDouble(empRows[0]["location_lng"]) : 0;
         jobTitle       = request.Title;
         jobDescription = request.Description ?? "";
         jobAddress     = request.Address ?? "Local a combinar";
@@ -1624,6 +1642,7 @@ webApp.MapGet("/api/admin/conversations", (HttpContext context) =>
             AND
             (r.reported_user_id = MIN(m.from_user_id, m.to_user_id)
              OR r.reported_user_id = MAX(m.from_user_id, m.to_user_id))
+            AND r.resolved = 0
         GROUP BY MIN(m.from_user_id, m.to_user_id),
                  MAX(m.from_user_id, m.to_user_id),
                  COALESCE(m.job_id, 0)
@@ -1796,6 +1815,130 @@ webApp.MapPost("/api/admin/users/moderate", (HttpContext context, AdminModerateR
     return Results.BadRequest(new { message = "Ação inválida." });
 });
 
+// --- Admin: list reports grouped by conversation, filtered by resolved state ---
+webApp.MapGet("/api/admin/reports", (HttpContext context) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+    int resolved = int.TryParse(context.Request.Query["resolved"], out var rv) ? rv : 0;
+
+    var rows = Database.ExecuteQuery(@"
+        SELECT
+            MIN(r.reporter_id, r.reported_user_id) AS user1_id,
+            MAX(r.reporter_id, r.reported_user_id) AS user2_id,
+            COALESCE(r.job_id, 0)                  AS job_id,
+            MIN(u1.name) AS user1_name,
+            MIN(u2.name) AS user2_name,
+            MIN(j.title) AS job_title,
+            MIN(j.payment_status) AS job_payment_status,
+            MIN(j.payment_amount) AS job_payment_amount,
+            COUNT(DISTINCT r.id) AS report_count,
+            MAX(r.created_at)    AS last_report_at,
+            GROUP_CONCAT(r.reason, ' | ') AS reasons
+        FROM reports r
+        JOIN users u1 ON u1.id = MIN(r.reporter_id, r.reported_user_id)
+        JOIN users u2 ON u2.id = MAX(r.reporter_id, r.reported_user_id)
+        LEFT JOIN jobs j ON j.id = r.job_id
+        WHERE r.resolved = @resolved
+        GROUP BY MIN(r.reporter_id, r.reported_user_id),
+                 MAX(r.reporter_id, r.reported_user_id),
+                 COALESCE(r.job_id, 0)
+        ORDER BY MAX(r.created_at) DESC",
+        new() { { "@resolved", resolved } });
+
+    return Results.Ok(rows.Select(r => new
+    {
+        user1Id          = Convert.ToInt32(r["user1_id"]),
+        user2Id          = Convert.ToInt32(r["user2_id"]),
+        jobId            = Convert.ToInt32(r["job_id"]) > 0 ? (int?)Convert.ToInt32(r["job_id"]) : null,
+        user1Name        = r["user1_name"]?.ToString() ?? "",
+        user2Name        = r["user2_name"]?.ToString() ?? "",
+        jobTitle         = r["job_title"]?.ToString(),
+        jobPaymentStatus = r["job_payment_status"]?.ToString(),
+        jobPaymentAmount = r["job_payment_amount"] != null && r["job_payment_amount"] != DBNull.Value ? Convert.ToDouble(r["job_payment_amount"]) : 0,
+        reportCount      = Convert.ToInt32(r["report_count"]),
+        lastReportAt     = r["last_report_at"]?.ToString() ?? "",
+        reasons          = r["reasons"]?.ToString() ?? "",
+    }));
+});
+
+// --- Admin: mark every report in a conversation as resolved (or reopen) ---
+webApp.MapPost("/api/admin/reports/resolve", (HttpContext context, AdminResolveReportRequest request) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+    int resolved = request.Resolved ? 1 : 0;
+
+    var pars = new Dictionary<string, object>
+    {
+        { "@u1", request.User1Id }, { "@u2", request.User2Id },
+        { "@resolved", resolved }, { "@now", DateTime.UtcNow.ToString("o") },
+    };
+    string jobFilter;
+    if (request.JobId.HasValue && request.JobId.Value > 0)
+    {
+        pars["@jobId"] = request.JobId.Value;
+        jobFilter = "AND job_id = @jobId";
+    }
+    else jobFilter = "AND job_id IS NULL";
+
+    var updated = Database.ExecuteNonQuery($@"
+        UPDATE reports SET resolved = @resolved, resolved_at = @now
+        WHERE ((reporter_id = @u1 AND reported_user_id = @u2)
+            OR (reporter_id = @u2 AND reported_user_id = @u1))
+        {jobFilter}", pars);
+
+    return Results.Ok(new { message = resolved == 1 ? "Reporte(s) marcado(s) como resolvido(s)." : "Reporte reaberto.", updated });
+});
+
+// --- Admin: refund escrowed money back to the employer and cancel the job ---
+webApp.MapPost("/api/admin/payments/refund", (HttpContext context, AdminRefundRequest request) =>
+{
+    if (!AdminHelper.IsAdmin(context)) return Results.Forbid();
+
+    var jobs = Database.ExecuteQuery("SELECT * FROM jobs WHERE id = @id", new() { { "@id", request.JobId } });
+    if (jobs.Count == 0) return Results.NotFound(new { message = "Trabalho não encontrado." });
+    var job = jobs[0];
+
+    var paymentStatus = job.ContainsKey("payment_status") ? job["payment_status"]?.ToString() ?? "none" : "none";
+    if (paymentStatus != "escrowed")
+        return Results.BadRequest(new { message = "Este trabalho não tem dinheiro em garantia." });
+
+    int employerId = Convert.ToInt32(job["employer_id"]);
+    int? workerId = job["worker_id"] != null && job["worker_id"] != DBNull.Value ? Convert.ToInt32(job["worker_id"]) : (int?)null;
+    double amount = job.ContainsKey("payment_amount") && job["payment_amount"] != null && job["payment_amount"] != DBNull.Value ? Convert.ToDouble(job["payment_amount"]) : 0;
+
+    try
+    {
+        Database.WithTransaction<object>(exec =>
+        {
+            var refunded = exec(
+                "UPDATE jobs SET payment_status = 'refunded', status = 'cancelled' WHERE id = @id AND payment_status = 'escrowed'",
+                new() { { "@id", request.JobId } });
+            if (refunded == 0)
+                throw new InvalidOperationException("O dinheiro já não está em garantia.");
+            exec(
+                "UPDATE users SET wallet_balance = wallet_balance + @amount WHERE id = @id",
+                new() { { "@amount", amount }, { "@id", employerId } });
+            return null;
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.BadRequest(new { message = ex.Message });
+    }
+
+    if (workerId.HasValue)
+    {
+        var title = job["title"]?.ToString() ?? "";
+        var content = $"⚖️ A administração cancelou o trabalho \"{title}\" e devolveu €{amount:F2} em garantia ao empreendedor.";
+        Database.ExecuteNonQuery(
+            @"INSERT INTO messages (from_user_id, to_user_id, job_id, content, message_type, created_at)
+              VALUES (@from, @to, @jobId, @content, 'payment_refunded', @now)",
+            new() { { "@from", employerId }, { "@to", workerId.Value }, { "@jobId", request.JobId }, { "@content", content }, { "@now", DateTime.UtcNow.ToString("o") } });
+    }
+
+    return Results.Ok(new { message = $"€{amount:F2} devolvidos ao empreendedor. Trabalho cancelado.", amount });
+});
+
 // --- Wallet Endpoint ---
 
 webApp.MapGet("/api/wallet", (HttpContext context) =>
@@ -1807,26 +1950,24 @@ webApp.MapGet("/api/wallet", (HttpContext context) =>
     var users = Database.ExecuteQuery("SELECT wallet_balance FROM users WHERE id = @id", new() { { "@id", userId } });
     var balance = users.Count > 0 ? Convert.ToDouble(users[0]["wallet_balance"]) : 0.0;
 
-    // Escrow = jobs accepted+escrowed (pending payout for worker, pending confirmation for employer)
-    double escrow = 0;
-    if (role == "worker")
-    {
-        var escrowed = Database.ExecuteQuery(
-            "SELECT SUM(payment_amount) as total FROM jobs WHERE worker_id = @id AND payment_status = 'escrowed'",
-            new() { { "@id", userId } });
-        escrow = escrowed.Count > 0 && escrowed[0]["total"] != null && escrowed[0]["total"] != DBNull.Value
-            ? Convert.ToDouble(escrowed[0]["total"]) : 0;
-    }
+    // Escrow = money currently held for escrowed jobs.
+    // Worker: pending payout owed to them. Employer: their own money locked up.
+    var escrowCol = role == "worker" ? "worker_id" : "employer_id";
+    var escrowedRows = Database.ExecuteQuery(
+        $"SELECT SUM(payment_amount) as total FROM jobs WHERE {escrowCol} = @id AND payment_status = 'escrowed'",
+        new() { { "@id", userId } });
+    double escrow = escrowedRows.Count > 0 && escrowedRows[0]["total"] != null && escrowedRows[0]["total"] != DBNull.Value
+        ? Convert.ToDouble(escrowedRows[0]["total"]) : 0;
 
     // Transaction history
     string txQuery = role == "worker"
         ? @"SELECT j.title, CASE WHEN j.payment_amount > 0 THEN j.payment_amount ELSE j.pay END as pay, j.payment_status, j.created_at, e.name as partner_name
             FROM jobs j JOIN users e ON j.employer_id = e.id
-            WHERE j.worker_id = @id AND j.payment_status IN ('escrowed','released')
+            WHERE j.worker_id = @id AND j.payment_status IN ('escrowed','released','refunded')
             ORDER BY j.created_at DESC LIMIT 20"
         : @"SELECT j.title, CASE WHEN j.payment_amount > 0 THEN j.payment_amount ELSE j.pay END as pay, j.payment_status, j.created_at, w.name as partner_name
             FROM jobs j LEFT JOIN users w ON j.worker_id = w.id
-            WHERE j.employer_id = @id AND j.payment_status IN ('escrowed','released')
+            WHERE j.employer_id = @id AND j.payment_status IN ('escrowed','released','refunded')
             ORDER BY j.created_at DESC LIMIT 20";
 
     var txRows = Database.ExecuteQuery(txQuery, new() { { "@id", userId } });
@@ -1863,6 +2004,8 @@ public record WorkerReviewRequest(int JobId, double Rating, string? Comment = nu
 public record ReportChatRequest(int ReportedUserId, int? JobId, string? Reason);
 public record AdminSendMsgRequest(int ToUserId, string Content, bool IsWarning = true);
 public record AdminModerateRequest(int UserId, string Action);
+public record AdminResolveReportRequest(int User1Id, int User2Id, int? JobId, bool Resolved = true);
+public record AdminRefundRequest(int JobId);
 public record ProposeJobRequest(int WorkerId, int? ExistingJobId, string? Title, string? Description, double Pay, string? Duration, string? WorkDate, string? Address);
 public record RespondProposalRequest(int JobId, bool Accept);
 

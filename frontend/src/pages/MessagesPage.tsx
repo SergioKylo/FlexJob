@@ -9,6 +9,7 @@ type JobDetail = {
   id: number;
   title: string;
   pay: number;
+  paymentAmount: number;
   duration: string;
   status: string;
   paymentStatus: string;
@@ -81,6 +82,10 @@ export function MessagesPage({
   const [partnerReviews, setPartnerReviews] = useState<{ id: number; rating: number; comment: string; reviewer_name: string; created_at: string }[]>([]);
   const [loadingPartnerReviews, setLoadingPartnerReviews] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Auto-select the initial conversation only once, never on the 5s refresh
+  const didInitialSelect = useRef(false);
+  // Track message count so the 3s refresh doesn't yank the user down while scrolling up
+  const prevMsgCount = useRef(0);
 
   // Tip prompt goes away once given (payment_tip message exists) or dismissed for this job
   const tipGiven = messages.some((m) => m.messageType === "payment_tip");
@@ -117,10 +122,12 @@ export function MessagesPage({
         if (!active) return;
         setConversations(data);
         setLoadingInbox(false);
-        if (initialPartnerId && !selectedConv) {
-          const existing = data.find(
-            (c) => c.partnerId === initialPartnerId && (initialJobId ? c.jobId === initialJobId : true)
-          );
+        // Only on the first load — otherwise the 5s refresh would keep yanking
+        // the user back to initialPartnerId (the closure's selectedConv is stale)
+        if (initialPartnerId && !didInitialSelect.current) {
+          didInitialSelect.current = true;
+          // One conversation per person — match on partner only, ignore job
+          const existing = data.find((c) => c.partnerId === initialPartnerId);
           if (existing) {
             setSelectedConv(existing);
           } else if (initialPartnerName) {
@@ -129,7 +136,7 @@ export function MessagesPage({
               partnerName: initialPartnerName,
               partnerAvatar: initialPartnerAvatar ?? "",
               partnerRole: "",
-              jobId: initialJobId ?? 0,
+              jobId: 0,
               jobTitle: "",
               lastMessage: "",
               lastMessageTime: new Date().toISOString(),
@@ -165,9 +172,16 @@ export function MessagesPage({
     return () => { active = false; clearInterval(interval); };
   }, [selectedConv?.partnerId, selectedConv?.jobId]);
 
-  // Fetch job details when a job conversation is selected
+  // One conversation per person: the "active" job (for the payment bar) is the most
+  // recent message that references a job (proposal, escrow, payment...).
+  let activeJobId = 0;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const jid = messages[i].jobId;
+    if (jid && jid > 0) { activeJobId = jid; break; }
+  }
+
+  // Reset the per-conversation forms when switching to a different person
   useEffect(() => {
-    setJobDetail(null);
     setShowRatingForm(false);
     setShowPayForm(false);
     setShowTipForm(false);
@@ -177,15 +191,28 @@ export function MessagesPage({
     setShowReportForm(false);
     setReportReason("");
     setReportSent(false);
-    if (selectedConv && selectedConv.jobId > 0) {
-      api.getJobDetail(selectedConv.jobId)
-        .then(setJobDetail)
-        .catch(() => setJobDetail(null));
-    }
-  }, [selectedConv?.jobId]);
+  }, [selectedConv?.partnerId]);
 
+  // Fetch job details for the active job in the thread
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!selectedConv || activeJobId <= 0) { setJobDetail(null); return; }
+    api.getJobDetail(activeJobId)
+      .then(setJobDetail)
+      .catch(() => setJobDetail(null));
+  }, [activeJobId, selectedConv?.partnerId]);
+
+  // Reset the counter when switching conversations so the next load scrolls to bottom
+  useEffect(() => {
+    prevMsgCount.current = 0;
+  }, [selectedConv?.partnerId, selectedConv?.jobId]);
+
+  // Only scroll down when messages were actually added (new/sent), not on every poll
+  useEffect(() => {
+    if (messages.length > prevMsgCount.current) {
+      const firstLoad = prevMsgCount.current === 0;
+      messagesEndRef.current?.scrollIntoView({ behavior: firstLoad ? "auto" : "smooth" });
+    }
+    prevMsgCount.current = messages.length;
   }, [messages]);
 
   async function handleSend(e: React.FormEvent) {
@@ -313,13 +340,12 @@ export function MessagesPage({
     try {
       await api.respondToProposal(jobId, accept);
       setRespondedProposals((prev) => new Set([...prev, jobId]));
-      const currentJobId = selectedConv!.jobId > 0 ? selectedConv!.jobId : undefined;
       if (accept) {
-        setSelectedConv((prev) => prev ? { ...prev, jobId } : prev);
         const detail = await api.getJobDetail(jobId);
         setJobDetail(detail);
       }
-      const data = await api.getMessages(selectedConv!.partnerId, accept ? jobId : currentJobId);
+      // One thread per person — always reload the full conversation
+      const data = await api.getMessages(selectedConv!.partnerId);
       setMessages(data);
     } catch (err: any) {
       toast.error(err?.message || t("errorRespondingProposal"));
@@ -380,6 +406,8 @@ export function MessagesPage({
   const workerEscrow = !isEmployer && jobDetail && jobDetail.paymentStatus === "escrowed";
   const jobDone = jobDetail && jobDetail.paymentStatus === "released";
   const showPaymentBar = !!(awaitingConfirmation || workerEscrow || jobDone);
+  // Amount actually held/paid in escrow (hours × rate). Falls back to hourly rate if not set yet.
+  const escrowAmount = jobDetail && jobDetail.paymentAmount > 0 ? jobDetail.paymentAmount : (jobDetail?.pay ?? 0);
 
   return (
     <div className="msg-shell">
@@ -459,6 +487,8 @@ export function MessagesPage({
                     selectedConv?.partnerId === conv.partnerId &&
                     selectedConv?.jobId === conv.jobId;
                   const isHidden = hiddenConvs.includes(`${conv.partnerId}-${conv.jobId}`);
+                  // When the conversation is open it's being read, so don't flag it
+                  const unread = isActive ? 0 : (conv.unreadCount ?? 0);
                   return (
                     <div
                       key={`${conv.partnerId}-${conv.jobId}`}
@@ -466,9 +496,16 @@ export function MessagesPage({
                       className="msg-conv-wrap"
                     >
                       <button
-                        onClick={() => setSelectedConv(conv)}
+                        onClick={() => {
+                          setSelectedConv(conv);
+                          // Optimistically clear the unread badge right away
+                          if ((conv.unreadCount ?? 0) > 0) {
+                            setConversations((prev) => prev.map((c) =>
+                              c.partnerId === conv.partnerId && c.jobId === conv.jobId ? { ...c, unreadCount: 0 } : c));
+                          }
+                        }}
                         className={`msg-conv-btn ${isActive ? "active" : ""}`}
-                        style={{ flex: 1 }}
+                        style={{ flex: 1, ...(unread > 0 ? { background: "rgba(99,102,241,0.09)" } : {}) }}
                       >
                         <div style={{ position: "relative", flexShrink: 0 }}>
                           <img
@@ -485,10 +522,10 @@ export function MessagesPage({
 
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.1rem" }}>
-                            <span style={{ fontWeight: "600", color: isHidden ? "var(--muted)" : "var(--ink)", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isHidden ? "italic" : undefined }}>
+                            <span style={{ fontWeight: unread > 0 ? "800" : "600", color: isHidden ? "var(--muted)" : "var(--ink)", fontSize: "0.88rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: isHidden ? "italic" : undefined }}>
                               {conv.partnerName}
                             </span>
-                            <span style={{ fontSize: "0.7rem", color: "var(--muted)", flexShrink: 0, marginLeft: "0.5rem" }}>
+                            <span style={{ fontSize: "0.7rem", color: unread > 0 ? "var(--brand)" : "var(--muted)", fontWeight: unread > 0 ? 700 : 400, flexShrink: 0, marginLeft: "0.5rem" }}>
                               {formatTime(conv.lastMessageTime)}
                             </span>
                           </div>
@@ -500,9 +537,23 @@ export function MessagesPage({
                               </span>
                             </div>
                           )}
-                          <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {conv.lastMessage || t("initConversation")}
-                          </p>
+                          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                            <p style={{ margin: 0, flex: 1, fontSize: "0.78rem", color: unread > 0 ? "var(--ink)" : "var(--muted)", fontWeight: unread > 0 ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {conv.lastMessageType === "job_proposal"
+                                ? `${t("proposalPreview")}${conv.jobTitle ? `: ${conv.jobTitle}` : ""}`
+                                : conv.lastMessage || t("initConversation")}
+                            </p>
+                            {unread > 0 && (
+                              <span style={{
+                                flexShrink: 0, minWidth: "18px", height: "18px", padding: "0 5px", boxSizing: "border-box",
+                                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                                background: "var(--brand)", color: "#fff", borderRadius: "9px",
+                                fontSize: "0.68rem", fontWeight: 800, lineHeight: 1,
+                              }}>
+                                {unread > 99 ? "99+" : unread}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </button>
                       <button
@@ -780,7 +831,7 @@ export function MessagesPage({
                     <>
                       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.6rem 0.9rem", borderRadius: "10px", background: "rgba(34,201,122,0.1)", border: "1px solid rgba(34,201,122,0.25)", color: "var(--green)" }}>
                         <CheckCircle size={16} />
-                        <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>{t("jobDoneConfirm").replace("{amount}", jobDetail!.pay.toFixed(2))}</span>
+                        <span style={{ fontSize: "0.85rem", fontWeight: "700" }}>{t("jobDoneConfirm").replace("{amount}", escrowAmount.toFixed(2))}</span>
                       </div>
                       {isEmployer && !tipGiven && !tipDismissed && (
                         <div style={{ borderTop: "1px solid var(--line)", paddingTop: "0.6rem", marginTop: "0.2rem" }}>
@@ -859,7 +910,7 @@ export function MessagesPage({
                       }}
                     >
                       <CheckCircle size={15} />
-                      {t("confirmJobDone").replace("{amount}", jobDetail!.pay.toFixed(2))}
+                      {t("confirmJobDone").replace("{amount}", escrowAmount.toFixed(2))}
                     </button>
                   )}
 
@@ -1095,6 +1146,21 @@ function MessageBubble({ msg, userId, onAcceptWorker, onRespondProposal, respond
           display: "flex", alignItems: "center", gap: "0.6rem",
         }}>
           <CheckCircle size={16} style={{ color: "#6366f1", flexShrink: 0 }} />
+          <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (type === "payment_refunded") {
+    return (
+      <div style={{ display: "flex", justifyContent: "center", margin: "0.4rem 0" }}>
+        <div style={{
+          padding: "0.7rem 1.1rem", borderRadius: "14px", maxWidth: "80%",
+          background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)",
+          display: "flex", alignItems: "center", gap: "0.6rem",
+        }}>
+          <AlertCircle size={16} style={{ color: "#f59e0b", flexShrink: 0 }} />
           <p style={{ margin: 0, fontSize: "0.84rem", color: "var(--ink)", fontWeight: "600", lineHeight: 1.4 }}>{msg.content}</p>
         </div>
       </div>
